@@ -1,6 +1,6 @@
 {
   "name": "tlogviewer",
-  "version": "1.0.0",
+  "version": "0.9.1",
   "description": "A js viewer for mavlink telemetry logs",
   "author": "Willian Galvani <williangalvani@gmail.com>",
   "private": true,
