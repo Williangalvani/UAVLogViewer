@@ -3,6 +3,7 @@
          v-bind:style="{width:  width + 'px', height: height + 'px', top: top + 'px', left: left + 'px' }">
         <div id="paneContent">
             <input id="filterbox" placeholder="Filter" v-model="filter">
+            <a href="#" title="Download Parameters"><i style="color:black;" class="fas fa-download"></i></a>
             <ul id="params">
                 <li v-for="param in filteredData" v-bind:key="param">
                     {{ param }} : <span style="float: right;">{{state.params.values[param]}}</span>
@@ -56,6 +57,54 @@ export default {
                     }
                 }, 2000)
             })
+        },
+        downloadParams () {
+
+            console.log(this.gd.data)
+            var data = this.gd.data
+            let header = ['timestamp(ms)']
+            for (let series of data) {
+                header.push(series.name.split(' |')[0])
+            }
+
+            let indexes = []
+
+            let interval = 100
+            let lasttime = Infinity
+            let finaltime = 0
+
+            for (let series in data) {
+                indexes.push(0)
+                const x = data[series].x
+                lasttime = Math.min(lasttime, x[0])
+                finaltime = Math.max(finaltime, x[x.length - 1])
+            }
+            let csv = [header]
+            while (lasttime < finaltime - interval) {
+                const line = [lasttime]
+                for (let series in data) {
+                    let index = indexes[series]
+                    let x = data[series].x[index]
+                    while (x < lasttime) {
+                        indexes[series] += 1
+                        index = indexes[series]
+                        x = data[series].x[index]
+                    }
+                    line.push(data[series].y[index])
+                }
+                csv.push(line)
+                lasttime = lasttime + interval
+            }
+            let csvContent = csv.map(e => e.join(',')).join('\n')
+            var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+            var link = document.createElement('a')
+            var url = URL.createObjectURL(blob)
+            link.setAttribute('href', url)
+            link.setAttribute('download', 'data.csv')
+            link.style.visibility = 'hidden'
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
         },
         setup () {
         }
@@ -128,7 +177,6 @@ export default {
     }
 
     input#filterbox {
-        width: 95%;
         margin: 23px 0px 0px 10px;
         padding: 4px;
         background-color: rgba(255, 255, 255, 0.836);
