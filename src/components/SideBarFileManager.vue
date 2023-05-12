@@ -137,6 +137,7 @@ export default {
             this.file = file
             const reader = new FileReader()
             reader.onload = function (e) {
+                console.log(e)
                 const data = reader.result
                 worker.postMessage({
                     action: 'parse',
@@ -147,6 +148,14 @@ export default {
             this.state.logType = file.name.endsWith('tlog') ? 'tlog' : 'bin'
 
             reader.readAsArrayBuffer(file)
+            reader.onerror = (error) => {
+                alert('unable to read file')
+                console.log(error)
+            }
+            reader.onabort = (error) => {
+                alert('unable to read file')
+                console.log(error)
+            }
         },
         uploadFile () {
             this.uploadStarted = true
