@@ -119,6 +119,11 @@
                           <input type="checkbox" v-model="state.showRadio">
                           <a class="check-font"> Radio Sticks </a>
                         </label>
+                        <label>
+                          <i class="fa fa-gamepad circle"></i>
+                          <input type="checkbox" v-model="state.showMagFit">
+                          <a class="check-font"> Radio Sticks </a>
+                        </label>
                         <label v-if="state.textMessages">
                           <i class="fa fa-comment circle"></i>
                           <input type="checkbox" v-model="state.showMessages">
