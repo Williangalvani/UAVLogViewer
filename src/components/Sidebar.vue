@@ -121,8 +121,8 @@
                         </label>
                         <label>
                           <i class="fa fa-gamepad circle"></i>
-                          <input type="checkbox" v-model="state.showMagFit">
-                          <a class="check-font"> Radio Sticks </a>
+                          <input type="checkbox" v-model="state.showMagfit">
+                          <a class="check-font"> Mag Fit Tool </a>
                         </label>
                         <label v-if="state.textMessages">
                           <i class="fa fa-comment circle"></i>
