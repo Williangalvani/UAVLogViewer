@@ -457,7 +457,7 @@ export default {
                     clearInterval(interval)
                     console.log('resolved for ' + messages)
                     resolve()
-                }, 300)
+                }, 3000)
             })
         },
         updateGlobeOpacity () {
