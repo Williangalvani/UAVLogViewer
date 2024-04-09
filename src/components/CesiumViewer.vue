@@ -33,9 +33,9 @@ import {
     Entity,
     ScreenSpaceEventHandler,
     ScreenSpaceEventType,
+    VideoSynchronizer,
     CallbackProperty,
     PolygonHierarchy,
-    ColorMaterialProperty,
     knockout,
     Cartographic,
     sampleTerrainMostDetailed,
@@ -43,6 +43,7 @@ import {
     JulianDate,
     ClockRange,
     Cartesian3,
+    Cartesian2,
     SampledProperty,
     LabelStyle,
     SampledPositionProperty,
@@ -128,6 +129,10 @@ export default {
     mounted () {
         // create eniro, statkart, and openseamap providers
         this.asyncSetup()
+        this.synchronizer = new VideoSynchronizer({
+            clock: this.viewer.clock,
+            element: document.getElementById('videoPlayer')
+        })
     },
     methods: {
         async asyncSetup () {
@@ -731,6 +736,8 @@ export default {
         },
 
         displayDebugHelper () {
+            this.cameraImage.material = document.getElementById('videoPlayer')
+            console.log(this.cameraImage.material)
             if (this.debugAxis !== null) {
                 this.viewer.scene.primitives.remove(this.debugAxis)
             }
@@ -780,10 +787,10 @@ export default {
             const tanX = Math.tan(window.radians(fovX / 2))
             const tanY = Math.tan(window.radians(fovY / 2))
             const corners = [
-                new Cartesian3(tanX, tanY, -1),
-                new Cartesian3(tanX, -tanY, -1),
                 new Cartesian3(-tanX, -tanY, -1),
-                new Cartesian3(-tanX, tanY, -1)
+                new Cartesian3(-tanX, tanY, -1),
+                new Cartesian3(tanX, tanY, -1),
+                new Cartesian3(tanX, -tanY, -1)
             ]
 
             for (const time of sampledPosition._property._times) {
@@ -811,8 +818,11 @@ export default {
                     // Find the intersection with the terrain
                     const intersection = this.viewer.scene.globe.pick(ray, this.viewer.scene)
                     if (intersection !== undefined) {
-                        newCorners.push(intersection)
-                        // console.log('valid data')
+                        // newCorners.push(intersection)
+                        // convert to cartographic, move up 10cm, convert back to cartesian
+                        const cartographic = Cartographic.fromCartesian(intersection)
+                        cartographic.height += 0.5
+                        newCorners.push(Cartographic.toCartesian(cartographic))
                     }
                 }
                 // if all corners are valid, add them to the lists
@@ -843,6 +853,7 @@ export default {
             this.state.timeRange = [this.startTimeMs, this.startTimeMs + timespan]
             const viewer = this.viewer
             this.start = this.getTimeStart()
+            this.synchronizer.epoch = this.start
             this.stop = JulianDate.addSeconds(this.start, Math.round(timespan / 1000), new JulianDate())
             // Make sure viewer is at the desired time.
             viewer.clock.startTime = this.start.clone()
@@ -1022,9 +1033,18 @@ export default {
                                 )
                             }
                             return new PolygonHierarchy(newCorners)
-                        }, false)
-                    },
-                    material: new ColorMaterialProperty(Color.RED.withAlpha(0.5))
+                        }, false),
+                        material: document.getElementById('videoPlayer'),
+                        perPositionHeight: true,
+                        textureCoordinates: {
+                            positions: [
+                                new Cartesian2(1, 0),
+                                new Cartesian2(0, 0),
+                                new Cartesian2(0, 1),
+                                new Cartesian2(1, 1)
+                            ]
+                        }
+                    }
                 })
             }
 
