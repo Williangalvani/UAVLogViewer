@@ -194,6 +194,18 @@ export class DataflashDataExtractor {
         return wps
     }
 
+    static extractGimbalAttitudes (messages) {
+        if ('MNT[0]' in messages) {
+            return {
+                Roll: messages['MNT[0]'].Roll,
+                Pitch: messages['MNT[0]'].Pitch,
+                Yaw: messages['MNT[0]'].YawE,
+                time: messages['MNT[0]'].time_boot_ms
+            }
+        }
+        return undefined
+    }
+
     static extractFences (messages) {
         const fences = []
         let tempFences = []

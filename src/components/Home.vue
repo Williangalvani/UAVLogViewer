@@ -15,6 +15,7 @@
         <DeviceIDViewer @close="state.showDeviceIDs = false" v-if="state.showDeviceIDs"></DeviceIDViewer>
         <AttitudeViewer @close="state.showAttitude = false" v-if="state.showAttitude"></AttitudeViewer>
         <MagFitTool     @close="state.showMagfit = false" v-if="state.showMagfit"></MagFitTool>
+        <VideoViewer    @closw="state.showVideo = false" v-if="state.showVideo"></VideoViewer>
         <div class="container-fluid" style="height: 100%; overflow: hidden;">
 
             <sidebar/>
@@ -50,6 +51,7 @@ import ParamViewer from '@/components/widgets/ParamViewer.vue'
 import MessageViewer from '@/components/widgets/MessageViewer.vue'
 import DeviceIDViewer from '@/components/widgets/DeviceIDViewer.vue'
 import AttitudeViewer from '@/components/widgets/AttitudeWidget.vue'
+import VideoViewer from '@/components/widgets/VideoViewer.vue'
 import { store } from '@/components/Globals.js'
 import { AtomSpinner } from 'epic-spinners'
 import { Color } from 'cesium'
@@ -98,6 +100,10 @@ export default {
 
             if (this.state.events.length === 0) {
                 this.state.events = this.dataExtractor.extractEvents(this.state.messages)
+            }
+
+            if (!this.state.gimbalAttitudes) {
+                this.state.gimbalAttitudes = this.dataExtractor.extractGimbalAttitudes(this.state.messages)
             }
             Vue.delete(this.state.messages, 'STAT')
             Vue.delete(this.state.messages, 'EV')
@@ -224,6 +230,7 @@ export default {
         MessageViewer,
         DeviceIDViewer,
         AttitudeViewer,
+        VideoViewer,
         MagFitTool
     },
     computed: {

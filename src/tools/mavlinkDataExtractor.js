@@ -60,6 +60,10 @@ export class MavlinkDataExtractor {
         return modes
     }
 
+    static extractGimbalAttitudes (messages) {
+        return undefined
+    }
+
     static extractEvents (messages) {
         let armedState = []
         if ('HEARTBEAT' in messages) {

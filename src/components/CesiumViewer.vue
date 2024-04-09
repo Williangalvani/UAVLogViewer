@@ -46,6 +46,9 @@ import {
     Transforms,
     PolylineDashMaterialProperty,
     TimeInterval,
+    PerInstanceColorAppearance,
+    PerspectiveFrustum,
+    FrustumOutlineGeometry,
     TimeIntervalCollection,
     HeadingPitchRoll,
     Ellipsoid,
@@ -748,6 +751,7 @@ export default {
             let position
             this.positions = []
             this.sampledPos = new SampledPositionProperty()
+            this.sampledGimbalAttitudes = new SampledProperty(Quaternion)
 
             // clean entities
             if (this.clickableTrajectory !== null) {
@@ -846,7 +850,63 @@ export default {
                     }
                 }
             }
+            if (this.state.gimbalAttitudes) {
+                const attitudes = this.state.gimbalAttitudes
+                console.log(attitudes)
+                for (const i in this.state.gimbalAttitudes.time) {
+                    const time = JulianDate.addSeconds(
+                        this.start, (attitudes.time[i] - this.startTimeMs) / 1000,
+                        new JulianDate()
+                    )
+                    // let new_position = this.sampledPos.getValue(time)
+                    const hpRoll = Transforms.headingPitchRollQuaternion(
+                        position,
+                        new HeadingPitchRoll(
+                            attitudes.Roll[i],
+                            attitudes.Pitch[i],
+                            attitudes.Yaw[i]
+                        ),
+                        Ellipsoid.WGS84,
+                        fixedFrameTransform
+                    )
+                    this.sampledGimbalAttitudes.addSample(time, hpRoll)
+                }
+                console.log(this.sampledGimbalAttitudes)
+            }
+            const frustum4 = new PerspectiveFrustum(
+                {
+                    fov: Math.PI / 2.0,
+                    aspectRatio: 4.0 / 3.0,
+                    near: 1.0,
+                    far: 100.0
+                }
+            )
+            const frustumGeometry4 = new FrustumOutlineGeometry({
+                frustum: frustum4,
+                origin: this.sampledPos,
+                orientation: this.sampledGimbalAttitudes
+            })
+            console.log(frustumGeometry4)
+            const frustumOutlineGeometryInstance4 = new GeometryInstance({
+                geometry: frustumGeometry4,
+                modelMatrix :[1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1], //identity
+                // modelMatrix :[1,0,0,0, 0,0,-1,0, 0,1,0,0, 0,0,0,1], //twist 90deg around x
+                attributes: {
+                    color: ColorGeometryInstanceAttribute.fromColor(new Color(0.0, 1.0, 0.0, 1.0))
+                }
+            })
+            console.log(frustumOutlineGeometryInstance4)
 
+            this.camera_fustrum = this.viewer.entities.add({
+                position: this.sampledPos,
+                orientation: sampledOrientation,
+                model: {
+                    uri: this.getVehicleModel(),
+                    minimumPixelSize: 15,
+                    scale: this.modelScale / 10
+                },
+                viewFrom: new Cartesian3(5, 0, 3)
+            })
             // Add airplane model with interpolated position and orientation
             this.model = this.viewer.entities.add({
                 availability: new TimeIntervalCollection([new TimeInterval({

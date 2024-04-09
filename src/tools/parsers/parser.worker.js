@@ -14,7 +14,8 @@ self.addEventListener('message', function (event) {
             parser = new DataflashParser(true)
         }
         const data = event.data.file
-        parser.processData(data)
+        parser.processData(data, ['CMD','MSG','FILE','MODE','AHR2','ATT','GPS','POS',
+        'XKQ1','XKQ','NKQ1','NKQ2','XKQ2','PARM','MSG','STAT','EV', 'MNT'])
     } else if (event.data.action === 'loadType') {
         if (!parser) {
             console.log('parser not ready')

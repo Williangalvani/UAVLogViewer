@@ -15,6 +15,7 @@ export const store = {
     showMessages: false,
     showDeviceIDs: false,
     showAttitude: false,
+    showVideo: false,
     flightModeChanges: [],
     file: null,
     events: [],

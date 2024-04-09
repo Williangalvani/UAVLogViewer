@@ -48,6 +48,11 @@
                           <a class="check-font"> Parameters </a>
                         </label>
                         <label>
+                          <i class="fa fa-camera circle"></i>
+                          <input type="checkbox" v-model="state.showVideo">
+                          <a class="check-font"> Video </a>
+                        </label>
+                        <label>
                           <i class="fa fa-gamepad circle"></i>
                           <input type="checkbox" v-model="state.showRadio">
                           <a class="check-font"> Radio Sticks </a>
