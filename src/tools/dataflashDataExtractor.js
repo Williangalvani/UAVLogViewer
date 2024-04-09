@@ -197,10 +197,18 @@ export class DataflashDataExtractor {
     static extractGimbalAttitudes (messages) {
         if ('MNT[0]' in messages) {
             return {
-                Roll: messages['MNT[0]'].Roll,
-                Pitch: messages['MNT[0]'].Pitch,
-                Yaw: messages['MNT[0]'].YawE,
+                Roll: messages['MNT[0]'].Roll.map((r) => window.radians(r)),
+                Pitch: messages['MNT[0]'].Pitch.map((p) => window.radians(p + 90)),
+                Yaw: messages['MNT[0]'].YawE.map((y) => window.radians(y)),
                 time: messages['MNT[0]'].time_boot_ms
+            }
+        }
+        if ('SIEA' in messages) {
+            return {
+                Roll: messages.SIEA.R.map((r) => window.radians(r)),
+                Pitch: messages.SIEA.P.map((p) => window.radians(p)),
+                Yaw: messages.SIEA.Y.map((y) => window.radians(y)),
+                time: messages.SIEA.time_boot_ms
             }
         }
         return undefined

@@ -46,9 +46,6 @@ import {
     Transforms,
     PolylineDashMaterialProperty,
     TimeInterval,
-    PerInstanceColorAppearance,
-    PerspectiveFrustum,
-    FrustumOutlineGeometry,
     TimeIntervalCollection,
     HeadingPitchRoll,
     Ellipsoid,
@@ -62,7 +59,12 @@ import {
     ColorGeometryInstanceAttribute,
     PolylineColorAppearance,
     Primitive,
-    ShaderSource
+    ShaderSource,
+    HorizontalOrigin,
+    VerticalOrigin,
+    Matrix3,
+    Ray,
+    DebugModelMatrixPrimitive
 } from 'cesium'
 
 import { store } from './Globals.js'
@@ -388,6 +390,7 @@ export default {
             this.changeCamera()
             setTimeout(this.updateTimelineColors, 500)
             setInterval(this.updateGlobeOpacity, 1000)
+            setInterval(this.displayDebugHelper, 500)
             setTimeout(() => {
                 this.viewer.flyTo(this.viewer.entities)
             }, 1000)
@@ -726,6 +729,66 @@ export default {
             this.viewer.clock.currentTime = this.msToCesiumTime(time)
         },
 
+        displayDebugHelper () {
+            if (this.debugAxis !== null) {
+                this.viewer.scene.primitives.remove(this.debugAxis)
+            }
+            this.debugAxis = this.viewer.scene.primitives.add(new DebugModelMatrixPrimitive(
+                {
+                    modelMatrix: this.cameraFustrum.computeModelMatrix(this.viewer.clock.currentTime),
+                    length: 300000.0,
+                    width: 5.0
+                }
+            ))
+            if (this.debugIntersection !== null) {
+                this.viewer.scene.primitives.remove(this.debugIntersection)
+            }
+            this.debugIntersection = this.viewer.scene.primitives.add(new DebugModelMatrixPrimitive(
+                {
+                    modelMatrix: this.cameraImage.computeModelMatrix(this.viewer.clock.currentTime),
+                    length: 300000.0,
+                    width: 5.0
+                }
+            ))
+        },
+
+        findTerrainIntersection (sampledPosition, sampledOrientation) {
+            // Get the current position and orientation
+            const intersectionPositions = new SampledPositionProperty()
+
+            // iterate over all time of sampledPosition
+            console.log(sampledPosition)
+            for (const time of sampledPosition._property._times) {
+                const position = sampledPosition.getValue(time)
+                const orientation = sampledOrientation.getValue(time)
+                if (!orientation) {
+                    intersectionPositions.addSample(time, position)
+                    continue
+                }
+                // Convert the orientation quaternion to a rotation matrix
+                const rotationMatrix = Matrix3.fromQuaternion(orientation)
+
+                // Apply the rotation matrix to a forward direction vector
+                const forwardDirection = new Cartesian3(0, 0, -1) // Adjust this vector based on your coordinate system
+                const direction = Matrix3.multiplyByVector(rotationMatrix, forwardDirection, new Cartesian3())
+
+                // Create a ray from the position in the calculated direction
+                const ray = new Ray(position, direction)
+                // Find the intersection with the terrain
+                const intersection = this.viewer.scene.globe.pick(ray, this.viewer.scene)
+                if (intersection !== undefined) {
+                    intersectionPositions.addSample(time, intersection)
+                    console.log('valid data')
+                }
+            }
+            if (intersectionPositions._property._times.length === 0) {
+                console.log('no valid data')
+                return sampledPosition
+            }
+            console.log(`found ${intersectionPositions._property._times.length} valid data`)
+            return intersectionPositions
+        },
+
         processTrajectory () {
             this.correctedTrajectory = []
             this.points = this.state.trajectories[this.state.trajectorySource].trajectory
@@ -798,6 +861,46 @@ export default {
                 points[0][0], points[0][1], points[0][2] + this.heightOffset
             )
             let fixedFrameTransform = Transforms.localFrameToFixedFrameGenerator('north', 'west')
+
+            if (this.state.gimbalAttitudes) {
+                const attitudes = this.state.gimbalAttitudes
+                for (const i in this.state.gimbalAttitudes.time) {
+                    const time = JulianDate.addSeconds(
+                        this.start, (attitudes.time[i] - this.startTimeMs) / 1000,
+                        new JulianDate()
+                    )
+                    // let new_position = this.sampledPos.getValue(time)
+                    const hpRoll = Transforms.headingPitchRollQuaternion(
+                        position,
+                        new HeadingPitchRoll(
+                            attitudes.Yaw[i],
+                            attitudes.Pitch[i],
+                            attitudes.Roll[i]
+                        ),
+                        Ellipsoid.WGS84,
+                        fixedFrameTransform
+                    )
+                    this.sampledGimbalAttitudes.addSample(time, hpRoll)
+                }
+                console.log(this.sampledGimbalAttitudes)
+            }
+
+            if (this.cameraFustrum !== null) {
+                this.viewer.entities.remove(this.cameraFustrum)
+            }
+            this.cameraFustrum = this.viewer.entities.add({
+                position: this.sampledPos,
+                orientation: this.sampledGimbalAttitudes,
+                cylinder: {
+                    numberOfVerticalLines: 4,
+                    length: 0.5,
+                    topRadius: 0.0,
+                    bottomRadius: 0.5,
+                    material: Color.GREEN.withAlpha(0.5),
+                    outline: true,
+                    outlineColor: Color.BLACK
+                }
+            })
             const sampledOrientation = new SampledProperty(Quaternion)
             if (Object.keys(this.state.timeAttitudeQ).length > 0) {
                 fixedFrameTransform = Transforms.localFrameToFixedFrameGenerator('north', 'east')
@@ -850,63 +953,17 @@ export default {
                     }
                 }
             }
-            if (this.state.gimbalAttitudes) {
-                const attitudes = this.state.gimbalAttitudes
-                console.log(attitudes)
-                for (const i in this.state.gimbalAttitudes.time) {
-                    const time = JulianDate.addSeconds(
-                        this.start, (attitudes.time[i] - this.startTimeMs) / 1000,
-                        new JulianDate()
-                    )
-                    // let new_position = this.sampledPos.getValue(time)
-                    const hpRoll = Transforms.headingPitchRollQuaternion(
-                        position,
-                        new HeadingPitchRoll(
-                            attitudes.Roll[i],
-                            attitudes.Pitch[i],
-                            attitudes.Yaw[i]
-                        ),
-                        Ellipsoid.WGS84,
-                        fixedFrameTransform
-                    )
-                    this.sampledGimbalAttitudes.addSample(time, hpRoll)
-                }
-                console.log(this.sampledGimbalAttitudes)
-            }
-            const frustum4 = new PerspectiveFrustum(
-                {
-                    fov: Math.PI / 2.0,
-                    aspectRatio: 4.0 / 3.0,
-                    near: 1.0,
-                    far: 100.0
-                }
-            )
-            const frustumGeometry4 = new FrustumOutlineGeometry({
-                frustum: frustum4,
-                origin: this.sampledPos,
-                orientation: this.sampledGimbalAttitudes
-            })
-            console.log(frustumGeometry4)
-            const frustumOutlineGeometryInstance4 = new GeometryInstance({
-                geometry: frustumGeometry4,
-                modelMatrix :[1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1], //identity
-                // modelMatrix :[1,0,0,0, 0,0,-1,0, 0,1,0,0, 0,0,0,1], //twist 90deg around x
-                attributes: {
-                    color: ColorGeometryInstanceAttribute.fromColor(new Color(0.0, 1.0, 0.0, 1.0))
-                }
-            })
-            console.log(frustumOutlineGeometryInstance4)
 
-            this.camera_fustrum = this.viewer.entities.add({
-                position: this.sampledPos,
-                orientation: sampledOrientation,
-                model: {
-                    uri: this.getVehicleModel(),
-                    minimumPixelSize: 15,
-                    scale: this.modelScale / 10
-                },
-                viewFrom: new Cartesian3(5, 0, 3)
+            this.cameraImage = this.viewer.entities.add({
+                position: this.findTerrainIntersection(this.sampledPos, this.sampledGimbalAttitudes),
+                billboard: {
+                    image: require('../assets/camera.png').default,
+                    scale: 0.1,
+                    horizontalOrigin: HorizontalOrigin.CENTER,
+                    verticalOrigin: VerticalOrigin.CENTER
+                }
             })
+
             // Add airplane model with interpolated position and orientation
             this.model = this.viewer.entities.add({
                 availability: new TimeIntervalCollection([new TimeInterval({
