@@ -33,6 +33,9 @@ import {
     Entity,
     ScreenSpaceEventHandler,
     ScreenSpaceEventType,
+    CallbackProperty,
+    PolygonHierarchy,
+    ColorMaterialProperty,
     knockout,
     Cartographic,
     sampleTerrainMostDetailed,
@@ -60,8 +63,6 @@ import {
     PolylineColorAppearance,
     Primitive,
     ShaderSource,
-    HorizontalOrigin,
-    VerticalOrigin,
     Matrix3,
     Ray,
     DebugModelMatrixPrimitive
@@ -587,7 +588,7 @@ export default {
         },
         changeCamera () {
             if (this.cameraType === 'follow' && this.viewer.trackedEntity !== this.model) {
-                this.viewer.trackedEntity = this.model
+                this.viewer.trackedEntity = this.cameraImage
             } else {
                 this.viewer.trackedEntity = undefined
             }
@@ -743,49 +744,90 @@ export default {
             if (this.debugIntersection !== null) {
                 this.viewer.scene.primitives.remove(this.debugIntersection)
             }
-            this.debugIntersection = this.viewer.scene.primitives.add(new DebugModelMatrixPrimitive(
-                {
-                    modelMatrix: this.cameraImage.computeModelMatrix(this.viewer.clock.currentTime),
-                    length: 300000.0,
-                    width: 5.0
-                }
-            ))
+            if (this.cameraImage) {
+                this.debugIntersection = this.viewer.scene.primitives.add(new DebugModelMatrixPrimitive(
+                    {
+                        modelMatrix: this.cameraImage.computeModelMatrix(this.viewer.clock.currentTime),
+                        length: 300000.0,
+                        width: 5.0
+                    }
+                ))
+            }
         },
 
         findTerrainIntersection (sampledPosition, sampledOrientation) {
             // Get the current position and orientation
-            const intersectionPositions = new SampledPositionProperty()
+            const intersectionPositions = [
+                new SampledPositionProperty(),
+                new SampledPositionProperty(),
+                new SampledPositionProperty(),
+                new SampledPositionProperty()
+            ]
 
             // iterate over all time of sampledPosition
             console.log(sampledPosition)
+
+            const fovX = 30
+            const fovY = 30
+            //     | \ theta
+            //     |  \
+            //     |   \
+            //    z|    \
+            //     |__x__\
+            //
+            // theta = atan(x/z)
+            // z = x / tan(theta) ?
+            const tanX = Math.tan(window.radians(fovX / 2))
+            const tanY = Math.tan(window.radians(fovY / 2))
+            const corners = [
+                new Cartesian3(tanX, tanY, -1),
+                new Cartesian3(tanX, -tanY, -1),
+                new Cartesian3(-tanX, -tanY, -1),
+                new Cartesian3(-tanX, tanY, -1)
+            ]
+
             for (const time of sampledPosition._property._times) {
                 const position = sampledPosition.getValue(time)
                 const orientation = sampledOrientation.getValue(time)
                 if (!orientation) {
-                    intersectionPositions.addSample(time, position)
+                    intersectionPositions[0].addSample(time, position)
+                    intersectionPositions[1].addSample(time, position)
+                    intersectionPositions[2].addSample(time, position)
+                    intersectionPositions[3].addSample(time, position)
                     continue
                 }
                 // Convert the orientation quaternion to a rotation matrix
                 const rotationMatrix = Matrix3.fromQuaternion(orientation)
 
-                // Apply the rotation matrix to a forward direction vector
-                const forwardDirection = new Cartesian3(0, 0, -1) // Adjust this vector based on your coordinate system
-                const direction = Matrix3.multiplyByVector(rotationMatrix, forwardDirection, new Cartesian3())
+                // store all corners until we know all of them are valid
+                const newCorners = []
+                for (let i = 0; i < corners.length; i++) {
+                    const corner = corners[i]
+                    // Apply the rotation matrix to a forward direction vector
+                    const direction = Matrix3.multiplyByVector(rotationMatrix, corner, new Cartesian3())
 
-                // Create a ray from the position in the calculated direction
-                const ray = new Ray(position, direction)
-                // Find the intersection with the terrain
-                const intersection = this.viewer.scene.globe.pick(ray, this.viewer.scene)
-                if (intersection !== undefined) {
-                    intersectionPositions.addSample(time, intersection)
-                    console.log('valid data')
+                    // Create a ray from the position in the calculated direction
+                    const ray = new Ray(position, direction)
+                    // Find the intersection with the terrain
+                    const intersection = this.viewer.scene.globe.pick(ray, this.viewer.scene)
+                    if (intersection !== undefined) {
+                        newCorners.push(intersection)
+                        // console.log('valid data')
+                    }
+                }
+                // if all corners are valid, add them to the lists
+                if (newCorners.length === 4) {
+                    intersectionPositions[0].addSample(time, newCorners[0])
+                    intersectionPositions[1].addSample(time, newCorners[1])
+                    intersectionPositions[2].addSample(time, newCorners[2])
+                    intersectionPositions[3].addSample(time, newCorners[3])
                 }
             }
-            if (intersectionPositions._property._times.length === 0) {
+            if (intersectionPositions[0]._property._times.length === 0) {
                 console.log('no valid data')
-                return sampledPosition
+                return undefined
             }
-            console.log(`found ${intersectionPositions._property._times.length} valid data`)
+            console.log(`found ${intersectionPositions[0]._property._times.length} valid data`)
             return intersectionPositions
         },
 
@@ -954,15 +996,37 @@ export default {
                 }
             }
 
-            this.cameraImage = this.viewer.entities.add({
-                position: this.findTerrainIntersection(this.sampledPos, this.sampledGimbalAttitudes),
-                billboard: {
-                    image: require('../assets/camera.png').default,
-                    scale: 0.1,
-                    horizontalOrigin: HorizontalOrigin.CENTER,
-                    verticalOrigin: VerticalOrigin.CENTER
-                }
-            })
+            if (this.cameraImage !== null) {
+                this.viewer.entities.remove(this.cameraImage)
+            }
+            const corners = this.findTerrainIntersection(this.sampledPos, sampledOrientation)
+            console.log('corners:')
+            console.log(corners)
+            if (corners !== undefined) {
+                this.cameraImage = this.viewer.entities.add({
+                    polygon: {
+                        hierarchy: new CallbackProperty(() => {
+                            const time = this.viewer.clock.currentTime
+                            // console.log(corners[0].getValue(time))
+                            const newCorners = corners.map(corner => corner.getValue(time))
+                            if (newCorners[0] === undefined) {
+                                console.log('bad corners')
+                                console.log(newCorners)
+                                return new PolygonHierarchy(
+                                    [
+                                        Cartesian3.fromDegrees(0, 1, 0),
+                                        Cartesian3.fromDegrees(1, 1, 0),
+                                        Cartesian3.fromDegrees(1, -1, 0),
+                                        Cartesian3.fromDegrees(0, 2, 0)
+                                    ]
+                                )
+                            }
+                            return new PolygonHierarchy(newCorners)
+                        }, false)
+                    },
+                    material: new ColorMaterialProperty(Color.RED.withAlpha(0.5))
+                })
+            }
 
             // Add airplane model with interpolated position and orientation
             this.model = this.viewer.entities.add({
