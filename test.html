@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Video Player with Sync Slider</title>
+</head>
+<body>
+    <input type="file" id="filePicker" accept="video/*">
+    <br>
+    <video id="videoPlayer" width="640" controls>
+        Your browser does not support the video tag.
+    </video>
+    <br>
+    <input type="range" id="syncSlider" min="0" max="100" value="0">
+    
+    <script>
+        const filePicker = document.getElementById('filePicker')
+        const videoPlayer = document.getElementById('videoPlayer')
+        const syncSlider = document.getElementById('syncSlider')
+
+        filePicker.addEventListener('change', function(event) {
+            const file = event.target.files[0]
+            const url = URL.createObjectURL(file)
+            videoPlayer.src = url
+            videoPlayer.load()
+        })
+
+        videoPlayer.addEventListener('loadedmetadata', function() {
+            syncSlider.max = videoPlayer.duration
+        })
+
+        videoPlayer.addEventListener('timeupdate', function() {
+            syncSlider.value = videoPlayer.currentTime
+        })
+
+        syncSlider.addEventListener('input', function() {
+            videoPlayer.currentTime = syncSlider.value
+        })
+    </script>
+</body>
+</html>

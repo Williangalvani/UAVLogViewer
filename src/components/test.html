@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Cesium Mesh with d3-delaunay</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.82/Build/Cesium/Cesium.js"></script>
+    <script src="https://d3js.org/d3-delaunay.v5.min.js"></script>
+    <style>
+        @import url(https://cesium.com/downloads/cesiumjs/releases/1.82/Build/Cesium/Widgets/widgets.css);
+        html, body, #cesiumContainer {
+            width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+<div id="cesiumContainer"></div>
+
+<script>
+    var viewer = new Cesium.Viewer('cesiumContainer');
+
+    function triangulateAndDisplayMesh(points) {
+        const delaunay = d3.Delaunay.from(points);
+        const triangles = delaunay.triangles;
+
+        for (let i = 0; i < triangles.length; i += 3) {
+            const trianglePoints = [
+                points[triangles[i]],
+                points[triangles[i + 1]],
+                points[triangles[i + 2]],
+                points[triangles[i]] // Close the triangle
+            ];
+
+            const cartesianPositions = trianglePoints.map(point => 
+                Cesium.Cartographic.toCartesian(Cesium.Cartographic.fromDegrees(point[0], point[1]))
+            );
+
+            viewer.entities.add({
+                polygon: {
+                    hierarchy: cartesianPositions,
+                    material: Cesium.Color.fromRandom({ alpha: 0.6 }),
+                    outline: true,
+                    outlineColor: Cesium.Color.BLACK
+                }
+            });
+        }
+    }
+
+    // Sample survey points
+    var points = [
+        [-70, 20],
+        [-68, 22],
+        [-66, 24],
+        [-70, 25],
+        [-67, 27]
+    ];
+
+    triangulateAndDisplayMesh(points);
+
+    viewer.zoomTo(viewer.entities);
+</script>
+
+</body>
+</html>
