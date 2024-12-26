@@ -16,6 +16,18 @@
             <CesiumSettingsWidget />
         </div>
         <div id="cesiumContainer"></div>
+        <div class="bathymetry-controls">
+            <b-button @click="generateBathymetry" variant="primary" class="mr-2">
+                Generate Bathymetry
+            </b-button>
+            <b-button 
+                @click="uploadBathymetry" 
+                variant="success" 
+                :disabled="!bathymetryData"
+                class="ml-2">
+                Share Bathymetry
+            </b-button>
+        </div>
     </div>
 </template>
 
@@ -110,7 +122,9 @@ export default {
             startTimeMs: 0,
             lastEmitted: 0,
             colorCoder: null,
-            selectedColorCoder: 'Mode'
+            selectedColorCoder: 'Mode',
+            bathymetryData: null, // Store the latest bathymetry data
+            bathymetryBounds: null // Store the bounds
         }
     },
     components: {
@@ -1022,6 +1036,15 @@ export default {
                 positionsWithDepth.map(p => Cartographic.fromDegrees(p.longitude, p.latitude))
             )
 
+            // Store the bathymetry data and bounds
+            this.bathymetryData = canvas.toDataURL('image/png')
+            this.bathymetryBounds = {
+                west: rectangle.west,
+                south: rectangle.south,
+                east: rectangle.east,
+                north: rectangle.north
+            }
+
             this.viewer.entities.add({
                 rectangle: {
                     coordinates: rectangle,
@@ -1334,14 +1357,10 @@ export default {
             return this.state.flightModeChanges[this.state.flightModeChanges.length - 1][1]
         },
         updateVisibility () {
+            console.log('Updating visibility')
             this.waypoints.show = this.showWaypoints
             this.trajectory.show = this.showTrajectory
             this.fences.show = this.showFences
-
-            const len = this.clickableTrajectory.length
-            for (let i = 0; i < len; ++i) {
-                this.clickableTrajectory.get(i).show = this.showClickableTrajectory
-            }
             this.viewer.scene.requestRender()
         },
         getVehicleModel () {
@@ -1392,6 +1411,55 @@ export default {
                 }
                 this.addModel()
             })
+        },
+        async uploadBathymetry() {
+            if (!this.bathymetryData || !this.bathymetryBounds) {
+                console.error('No bathymetry data available')
+                return
+            }
+
+            try {
+                const formData = new FormData()
+                
+                // Convert base64 to blob
+                const base64Response = await fetch(this.bathymetryData)
+                const blob = await base64Response.blob()
+                
+                // Add the image file
+                formData.append('image', blob, 'bathymetry.png')
+                
+                // Add the bounds data
+                formData.append('bounds', JSON.stringify(this.bathymetryBounds))
+
+                const response = await fetch('http://localhost:8000/upload/', {
+                    method: 'POST',
+                    body: formData
+                })
+
+                if (!response.ok) {
+                    throw new Error(`Upload failed: ${response.statusText}`)
+                }
+
+                const result = await response.json()
+                console.log('Upload successful:', result)
+                
+                // Show success message to user
+                this.$bvToast.toast('Bathymetry uploaded successfully!', {
+                    title: 'Success',
+                    variant: 'success',
+                    solid: true
+                })
+
+            } catch (error) {
+                console.error('Upload failed:', error)
+                
+                // Show error message to user
+                this.$bvToast.toast('Failed to upload bathymetry', {
+                    title: 'Error',
+                    variant: 'danger',
+                    solid: true
+                })
+            }
         }
     },
     computed: {
@@ -1722,4 +1790,21 @@ export default {
     .color-coding-select {
       margin: 4px;
     }
+</style>
+
+<style>
+.bathymetry-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+}
+
+.ml-2 {
+  margin-left: 0.5rem;
+}
+
+.mr-2 {
+  margin-right: 0.5rem;
+}
 </style>
