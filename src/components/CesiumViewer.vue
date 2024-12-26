@@ -16,18 +16,6 @@
             <CesiumSettingsWidget />
         </div>
         <div id="cesiumContainer"></div>
-        <div class="bathymetry-controls">
-            <b-button @click="generateBathymetry" variant="primary" class="mr-2">
-                Generate Bathymetry
-            </b-button>
-            <b-button 
-                @click="uploadBathymetry" 
-                variant="success" 
-                :disabled="!bathymetryData"
-                class="ml-2">
-                Share Bathymetry
-            </b-button>
-        </div>
     </div>
 </template>
 
@@ -526,24 +514,34 @@ export default {
             /* Creates the bathymetry button on the Cesium toolbar */
             const toolbar = document.getElementsByClassName('cesium-viewer-toolbar')[0]
 
-            let bathymetryButton = document.createElement('span')
+            const bathymetryButton = document.createElement('span')
             if (bathymetryButton.classList) {
                 bathymetryButton.classList.add('cesium-navigationHelpButton-wrapper')
             } else {
                 bathymetryButton.className += ' ' + 'cesium-navigationHelpButton-wrapper'
             }
             bathymetryButton.innerHTML = '' +
-              '<button type="button" ' +
-              'id="cesium-bathymetry-button" ' +
-              'class="cesium-button cesium-toolbar-button"' +
-              'title="Toggle Bathymetry">' +
-              '<i class="fas fa-ship" style="font-style: unset;"></i>' +
-              '</button>'.trim()
+                '<button type="button" ' +
+                'id="cesium-bathymetry-button" ' +
+                'class="cesium-button cesium-toolbar-button"' +
+                'title="Generate Bathymetry">' +
+                '<i class="fas fa-ship" style="font-style: unset;"></i>' +
+                '</button>'.trim()
             toolbar.append(bathymetryButton)
-            bathymetryButton = document.getElementById('cesium-bathymetry-button')
-            bathymetryButton.addEventListener('click', () => {
-                this.plotBathymetry()
-                this.viewer.scene.requestRender()
+
+            const button = document.getElementById('cesium-bathymetry-button')
+            button.addEventListener('click', () => {
+                if (this.bathymetryData) {
+                    // If we have bathymetry data, this is now a share button
+                    this.uploadBathymetry()
+                } else {
+                    // Generate bathymetry
+                    this.plotBathymetry()
+                    this.viewer.scene.requestRender()
+                    // Change to share icon
+                    button.innerHTML = '<i class="fas fa-share-alt" style="font-style: unset;"></i>'
+                    button.title = 'Share Bathymetry'
+                }
             })
         },
         addFitContentsButton () {
@@ -1412,28 +1410,36 @@ export default {
                 this.addModel()
             })
         },
-        async uploadBathymetry() {
+        async uploadBathymetry () {
             if (!this.bathymetryData || !this.bathymetryBounds) {
                 console.error('No bathymetry data available')
                 return
             }
 
             try {
-                const formData = new FormData()
-                
                 // Convert base64 to blob
                 const base64Response = await fetch(this.bathymetryData)
                 const blob = await base64Response.blob()
-                
-                // Add the image file
-                formData.append('image', blob, 'bathymetry.png')
-                
-                // Add the bounds data
-                formData.append('bounds', JSON.stringify(this.bathymetryBounds))
+
+                // Convert Cesium rectangle coordinates to API format
+                const bounds = {
+                    top: this.bathymetryBounds.north * 180 / Math.PI, // Convert radians to degrees
+                    bottom: this.bathymetryBounds.south * 180 / Math.PI,
+                    left: this.bathymetryBounds.west * 180 / Math.PI,
+                    right: this.bathymetryBounds.east * 180 / Math.PI
+                }
+
+                const formData = new FormData()
+                formData.append('file', blob, 'bathymetry.png')
+                formData.append('coords_str', JSON.stringify(bounds))
 
                 const response = await fetch('http://localhost:8000/upload/', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: {
+                        Accept: 'application/json'
+                    },
+                    credentials: 'same-origin'
                 })
 
                 if (!response.ok) {
@@ -1442,18 +1448,24 @@ export default {
 
                 const result = await response.json()
                 console.log('Upload successful:', result)
-                
-                // Show success message to user
+
+                // Change button back to ship icon after successful upload
+                const button = document.getElementById('cesium-bathymetry-button')
+                button.innerHTML = '<i class="fas fa-ship" style="font-style: unset;"></i>'
+                button.title = 'Generate Bathymetry'
+                this.bathymetryData = null
+                this.bathymetryBounds = null
+
+                // Show success message
                 this.$bvToast.toast('Bathymetry uploaded successfully!', {
                     title: 'Success',
                     variant: 'success',
                     solid: true
                 })
-
             } catch (error) {
                 console.error('Upload failed:', error)
-                
-                // Show error message to user
+
+                // Show error message
                 this.$bvToast.toast('Failed to upload bathymetry', {
                     title: 'Error',
                     variant: 'danger',
