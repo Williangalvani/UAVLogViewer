@@ -13,6 +13,23 @@
                 </tr>
               </tbody>
             </table>
+            <div class="image-overlay-list">
+                <div class="list-header">Image Overlays</div>
+                <div class="list-container">
+                    <div v-for="image in availableImages"
+                         :key="image.id"
+                         class="list-item"
+                         @mouseover="showPreviewRectangle(image)"
+                         @mouseout="clearPreviewRectangle">
+                        <label class="checkbox-label">
+                            <input type="checkbox"
+                                   :checked="isImageSelected(image)"
+                                   @change="toggleImageOverlay(image)">
+                            {{ image.filename }}
+                        </label>
+                    </div>
+                </div>
+            </div>
             <CesiumSettingsWidget />
         </div>
         <div id="cesiumContainer"></div>
@@ -111,8 +128,12 @@ export default {
             lastEmitted: 0,
             colorCoder: null,
             selectedColorCoder: 'Mode',
-            bathymetryData: null, // Store the latest bathymetry data
-            bathymetryBounds: null // Store the bounds
+            bathymetryData: null,
+            bathymetryBounds: null,
+            availableImages: [],
+            selectedImages: new Set(),
+            previewRectangle: null,
+            imageOverlayEntities: new Map()
         }
     },
     components: {
@@ -126,6 +147,7 @@ export default {
         this.waypoints = null // Autopilot Waypoints
         this.trajectory = null // GPS trajectory (in degrees)
         this.correctedTrajectory = [] // GPS trajectory (Cartographic array)
+        this.previewEntity = null // Reusable preview entity
 
         // Link time with plot updates
         this.$eventHub.$on('hoveredTime', this.showAttitude)
@@ -235,6 +257,14 @@ export default {
             } else {
                 this.setup2(this.correctedTrajectory)
             }
+
+            // Add camera movement event listener to update available images
+            this.viewer.camera.moveEnd.addEventListener(() => {
+                this.fetchAvailableImages()
+            })
+
+            // Initial fetch of available images
+            await this.fetchAvailableImages()
         },
         updateShader () {
             // eslint-disable-next-line camelcase
@@ -1417,13 +1447,52 @@ export default {
             }
 
             try {
-                // Convert base64 to blob
-                const base64Response = await fetch(this.bathymetryData)
-                const blob = await base64Response.blob()
+                // Create a temporary canvas to flip the image
+                const img = new Image()
+                const canvas = document.createElement('canvas')
+                const ctx = canvas.getContext('2d')
+
+                // Wait for image to load
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve
+                    img.onerror = reject
+                    img.src = this.bathymetryData
+                })
+
+                // Set canvas size to match image
+                canvas.width = img.width
+                canvas.height = img.height
+
+                // Draw the original image
+                ctx.drawImage(img, 0, 0)
+
+                // Get the image data
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+                const data = imageData.data
+                const rowLength = canvas.width * 4
+
+                // Create a new array for the flipped data
+                const flippedData = new Uint8ClampedArray(data.length)
+
+                // Flip the image data vertically
+                for (let y = 0; y < canvas.height; y++) {
+                    const srcRow = (canvas.height - 1 - y) * rowLength
+                    const destRow = y * rowLength
+                    for (let x = 0; x < rowLength; x++) {
+                        flippedData[destRow + x] = data[srcRow + x]
+                    }
+                }
+
+                // Put the flipped data back
+                const flippedImageData = new ImageData(flippedData, canvas.width, canvas.height)
+                ctx.putImageData(flippedImageData, 0, 0)
+
+                // Convert canvas back to blob
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
 
                 // Convert Cesium rectangle coordinates to API format
                 const bounds = {
-                    top: this.bathymetryBounds.north * 180 / Math.PI, // Convert radians to degrees
+                    top: this.bathymetryBounds.north * 180 / Math.PI,
                     bottom: this.bathymetryBounds.south * 180 / Math.PI,
                     left: this.bathymetryBounds.west * 180 / Math.PI,
                     right: this.bathymetryBounds.east * 180 / Math.PI
@@ -1471,6 +1540,100 @@ export default {
                     variant: 'danger',
                     solid: true
                 })
+            }
+        },
+        async fetchAvailableImages () {
+            try {
+                // Get current camera view bounds
+                const rectangle = this.viewer.camera.computeViewRectangle()
+                const minLat = (rectangle.south * 180 / Math.PI)
+                const maxLat = (rectangle.north * 180 / Math.PI)
+                const minLon = (rectangle.west * 180 / Math.PI)
+                const maxLon = (rectangle.east * 180 / Math.PI)
+
+                const response = await fetch(
+                    `http://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`,
+                    {
+                        headers: {
+                            accept: 'application/json'
+                        }
+                    }
+                )
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch images')
+                }
+
+                this.availableImages = await response.json()
+            } catch (error) {
+                console.error('Error fetching images:', error)
+            }
+        },
+
+        isImageSelected (image) {
+            return this.selectedImages.has(image.id)
+        },
+
+        toggleImageOverlay (image) {
+            if (this.isImageSelected(image)) {
+                // Remove overlay
+                this.selectedImages.delete(image.id)
+                if (this.imageOverlayEntities.has(image.id)) {
+                    this.viewer.scene.imageryLayers.remove(this.imageOverlayEntities.get(image.id))
+                    this.imageOverlayEntities.delete(image.id)
+                }
+            } else {
+                // Add overlay
+                this.selectedImages.add(image.id)
+                this.addImageOverlay(image)
+            }
+        },
+
+        addImageOverlay (image) {
+            if (this.imageOverlayEntities.has(image.id)) {
+                this.viewer.entities.remove(this.imageOverlayEntities.get(image.id))
+            }
+
+            const imageryProvider = new UrlTemplateImageryProvider({
+                url: `http://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
+                rectangle: Rectangle.fromDegrees(
+                    image.left,
+                    image.bottom,
+                    image.right,
+                    image.top
+                ),
+                minimumLevel: 0,
+                maximumLevel: 20
+            })
+
+            const layer = this.viewer.scene.imageryLayers.addImageryProvider(imageryProvider)
+            this.imageOverlayEntities.set(image.id, layer)
+        },
+
+        showPreviewRectangle (image) {
+            if (!this.previewEntity) {
+                this.previewEntity = this.viewer.entities.add({
+                    rectangle: {
+                        coordinates: new Rectangle(),
+                        material: Color.YELLOW.withAlpha(0.3),
+                        outline: true,
+                        outlineColor: Color.YELLOW
+                    }
+                })
+            }
+
+            this.previewEntity.rectangle.coordinates = Rectangle.fromDegrees(
+                image.left,
+                image.bottom,
+                image.right,
+                image.top
+            )
+            this.previewEntity.show = true
+        },
+
+        clearPreviewRectangle () {
+            if (this.previewEntity) {
+                this.previewEntity.show = false
             }
         }
     },
@@ -1818,5 +1981,70 @@ export default {
 
 .mr-2 {
   margin-right: 0.5rem;
+}
+</style>
+
+<style scoped>
+.image-overlay-list {
+    margin-left: 10px;
+    background-color: rgba(40, 40, 40, 0.7);
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #444;
+    max-width: 300px;
+}
+
+.list-header {
+    color: #edffff;
+    font-weight: bold;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #555;
+}
+
+.list-container {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.list-item {
+    padding: 4px 0;
+    color: #edffff;
+    cursor: pointer;
+}
+
+.list-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin: 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+    cursor: pointer;
+}
+
+/* Scrollbar styling */
+.list-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.list-container::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+}
+
+.list-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
+.list-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4);
 }
 </style>
