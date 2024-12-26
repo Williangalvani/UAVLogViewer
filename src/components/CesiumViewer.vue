@@ -25,7 +25,11 @@
                             <input type="checkbox"
                                    :checked="isImageSelected(image)"
                                    @change="toggleImageOverlay(image)">
-                            {{ image.filename }}
+                            <div class="image-info">
+                                <div class="image-title">{{ image.title || 'Untitled' }}</div>
+                                <div class="image-description" v-if="image.description">{{ image.description }}</div>
+                                <div class="image-date">{{ formatDate(image.created_at) }}</div>
+                            </div>
                         </label>
                     </div>
                 </div>
@@ -33,6 +37,27 @@
             <CesiumSettingsWidget />
         </div>
         <div id="cesiumContainer"></div>
+
+        <!-- Add modal dialog -->
+        <div v-if="showUploadDialog" class="upload-dialog-overlay">
+            <div class="upload-dialog">
+                <h3>Upload Bathymetry</h3>
+                <div class="form-group">
+                    <label>Title</label>
+                    <input type="text" v-model="bathymetryTitle" placeholder="Enter title" class="cesium-button">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea
+                      v-model="bathymetryDescription" placeholder="Enter description" class="cesium-button">
+                    </textarea>
+                </div>
+                <div class="dialog-buttons">
+                    <button class="cesium-button" @click="confirmUpload">Upload</button>
+                    <button class="cesium-button" @click="cancelUpload">Cancel</button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -130,10 +155,14 @@ export default {
             selectedColorCoder: 'Mode',
             bathymetryData: null,
             bathymetryBounds: null,
+            bathymetryTitle: '',
+            bathymetryDescription: '',
             availableImages: [],
             selectedImages: new Set(),
             previewRectangle: null,
-            imageOverlayEntities: new Map()
+            imageOverlayEntities: new Map(),
+            showUploadDialog: false,
+            pendingUpload: false
         }
     },
     components: {
@@ -1087,6 +1116,15 @@ export default {
                 }
             })
             this.viewer.scene.requestRender()
+
+            // Change to share icon
+            const button = document.getElementById('cesium-bathymetry-button')
+            button.innerHTML = '<i class="fas fa-share-alt" style="font-style: unset;"></i>'
+            button.title = 'Share Bathymetry'
+            button.onclick = () => {
+                this.showUploadDialog = true
+                this.pendingUpload = true
+            }
         },
 
         // Hull generation helper function remains the same as before,
@@ -1501,6 +1539,8 @@ export default {
                 const formData = new FormData()
                 formData.append('file', blob, 'bathymetry.png')
                 formData.append('coords_str', JSON.stringify(bounds))
+                formData.append('title', this.bathymetryTitle || 'Untitled Bathymetry')
+                formData.append('description', this.bathymetryDescription || '')
 
                 const response = await fetch('http://localhost:8000/upload/', {
                     method: 'POST',
@@ -1524,6 +1564,8 @@ export default {
                 button.title = 'Generate Bathymetry'
                 this.bathymetryData = null
                 this.bathymetryBounds = null
+                this.bathymetryTitle = ''
+                this.bathymetryDescription = ''
 
                 // Show success message
                 this.$bvToast.toast('Bathymetry uploaded successfully!', {
@@ -1541,6 +1583,19 @@ export default {
                     solid: true
                 })
             }
+        },
+        async confirmUpload () {
+            this.showUploadDialog = false
+            if (this.pendingUpload) {
+                this.pendingUpload = false
+                await this.uploadBathymetry()
+            }
+        },
+        cancelUpload () {
+            this.showUploadDialog = false
+            this.pendingUpload = false
+            this.bathymetryTitle = ''
+            this.bathymetryDescription = ''
         },
         async fetchAvailableImages () {
             try {
@@ -1591,16 +1646,21 @@ export default {
 
         addImageOverlay (image) {
             if (this.imageOverlayEntities.has(image.id)) {
-                this.viewer.entities.remove(this.imageOverlayEntities.get(image.id))
+                this.viewer.scene.imageryLayers.remove(this.imageOverlayEntities.get(image.id))
             }
+
+            // Calculate margin as 5% of the rectangle size
+            const latSize = Math.abs(image.top - image.bottom)
+            const lonSize = Math.abs(image.right - image.left)
+            const margin = Math.max(latSize, lonSize) * 0.2
 
             const imageryProvider = new UrlTemplateImageryProvider({
                 url: `http://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
                 rectangle: Rectangle.fromDegrees(
-                    image.left,
-                    image.bottom,
-                    image.right,
-                    image.top
+                    image.left - margin,
+                    image.bottom - margin,
+                    image.right + margin,
+                    image.top + margin
                 ),
                 minimumLevel: 0,
                 maximumLevel: 20
@@ -1635,6 +1695,10 @@ export default {
             if (this.previewEntity) {
                 this.previewEntity.show = false
             }
+        },
+        formatDate (dateString) {
+            const date = DateTime.fromISO(dateString)
+            return date.toLocaleString(DateTime.DATETIME_SHORT)
         }
     },
     computed: {
@@ -2019,10 +2083,11 @@ export default {
 
 .checkbox-label {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     cursor: pointer;
     margin: 0;
+    padding: 4px 0;
 }
 
 .checkbox-label input[type="checkbox"] {
@@ -2046,5 +2111,99 @@ export default {
 
 .list-container::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.4);
+}
+</style>
+
+<style scoped>
+.upload-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.upload-dialog {
+    background: rgba(40, 40, 40, 0.95);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    width: 400px;
+    color: #edffff;
+}
+
+.upload-dialog h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: #edffff;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 8px;
+    background: rgba(60, 60, 60, 0.9);
+    border: 1px solid #555;
+    color: #edffff;
+    margin-top: 4px;
+}
+
+.form-group textarea {
+    height: 100px;
+    resize: vertical;
+}
+
+.dialog-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.dialog-buttons .cesium-button {
+    padding: 8px 16px;
+}
+
+.dialog-buttons .cesium-button:hover {
+    background: rgba(80, 80, 80, 0.9);
+}
+
+.image-info {
+    flex: 1;
+    min-width: 0; /* Allows text to wrap properly */
+}
+
+.image-title {
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.image-description {
+    font-size: 0.9em;
+    color: #aaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.image-date {
+    font-size: 0.8em;
+    color: #888;
 }
 </style>
