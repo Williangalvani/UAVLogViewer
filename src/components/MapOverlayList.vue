@@ -88,6 +88,7 @@ export default {
             this.boundingRectangles.forEach(entity => {
                 entity.show = newValue
             })
+            this.viewer.scene.requestRender()
         }
     },
     mounted () {
@@ -167,11 +168,12 @@ export default {
                         outline: true,
                         outlineColor: Color.WHITE
                     },
-                    imageData: image, // Store the image data for click handling
-                    show: this.isExpanded // Initial visibility based on expanded state
+                    imageData: image,
+                    show: this.isExpanded
                 })
                 this.boundingRectangles.set(image.id, entity)
             })
+            this.viewer.scene.requestRender()
         },
 
         isImageSelected (image) {
@@ -191,6 +193,7 @@ export default {
                 this.selectedImages.add(image.id)
                 this.addImageOverlay(image)
             }
+            this.viewer.scene.requestRender()
         },
 
         addImageOverlay (image) {
@@ -231,6 +234,7 @@ export default {
 
         toggleExpanded () {
             this.isExpanded = !this.isExpanded
+            this.viewer.scene.requestRender()
         }
     }
 }
