@@ -35,9 +35,21 @@
                             {{ formatDate(image.created_at) }}
                         </div>
                     </div>
-                    <input type="checkbox"
-                           :checked="isImageSelected(image)"
-                           @change="toggleImageOverlay(image)">
+                    <div class="layer-actions">
+                        <button class="action-button"
+                                title="Center view"
+                                @click.stop="centerOnImage(image)">
+                            <i class="fas fa-crosshairs"></i>
+                        </button>
+                        <button class="action-button"
+                                title="Show details"
+                                @click.stop="showImageDetails(image)">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                        <input type="checkbox"
+                               :checked="isImageSelected(image)"
+                               @change="toggleImageOverlay(image)">
+                    </div>
                 </div>
             </div>
 
@@ -82,6 +94,27 @@
                 </div>
             </div>
         </div>
+
+        <!-- Image Details Modal -->
+        <div v-if="showDetailsModal" class="image-details-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>{{ selectedImage?.title || 'Untitled' }}</h3>
+                    <button class="close-button" @click="closeDetailsModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p class="date">Created: {{ formatDate(selectedImage?.created_at) }}</p>
+                    <p class="description">{{ selectedImage?.description || 'No description available' }}</p>
+                    <p class="coordinates">
+                        Bounds:<br>
+                        North: {{ selectedImage?.top.toFixed(6) }}°<br>
+                        South: {{ selectedImage?.bottom.toFixed(6) }}°<br>
+                        East: {{ selectedImage?.right.toFixed(6) }}°<br>
+                        West: {{ selectedImage?.left.toFixed(6) }}°
+                    </p>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -120,6 +153,8 @@ export default {
             showSeamarks: false,
             selectedBaseLayer: null,
             showLayerPicker: false,
+            showDetailsModal: false,
+            selectedImage: null,
             baseLayers: [
                 {
                     name: 'Sentinel-2',
@@ -298,7 +333,7 @@ export default {
                 const maxLon = (rectangle.east * 180 / Math.PI)
 
                 const response = await fetch(
-                    `http://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`,
+                    `http://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}&include_partial=true`,
                     {
                         headers: {
                             accept: 'application/json'
@@ -311,7 +346,6 @@ export default {
                 }
 
                 this.availableImages = await response.json()
-                // Only update rectangles if picker is open
                 if (this.showLayerPicker) {
                     this.updateBoundingRectangles()
                 }
@@ -464,6 +498,33 @@ export default {
                 this.boundingRectangles.clear()
             }
             this.viewer.scene.requestRender()
+        },
+
+        centerOnImage (image) {
+            const rectangle = Rectangle.fromDegrees(
+                image.left,
+                image.bottom,
+                image.right,
+                image.top
+            )
+
+            // Use current camera height as maximum height
+            const currentHeight = this.viewer.camera.positionCartographic.height
+
+            this.viewer.camera.flyTo({
+                destination: rectangle,
+                duration: 1.5,
+                maximumHeight: currentHeight
+            })
+        },
+
+        showImageDetails (image) {
+            this.selectedImage = image
+            this.showDetailsModal = true
+        },
+
+        closeDetailsModal () {
+            this.showDetailsModal = false
         }
     },
     computed: {
@@ -721,5 +782,96 @@ export default {
 
 .date {
     color: #888;
+}
+
+.layer-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.action-button {
+    background: none;
+    border: none;
+    color: #edffff;
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.action-button:hover {
+    opacity: 1;
+}
+
+.image-details-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.modal-content {
+    background: rgba(38, 38, 38, 0.95);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    width: 400px;
+    color: #edffff;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.modal-header h3 {
+    margin: 0;
+}
+
+.modal-header .close-button {
+    background: none;
+    border: none;
+    color: #edffff;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.modal-header .close-button:hover {
+    opacity: 1;
+}
+
+.modal-body {
+    padding: 0;
+}
+
+.modal-body p {
+    margin: 15px 0;
+    line-height: 1.4;
+}
+
+.modal-body .date {
+    color: #888;
+    font-size: 0.9em;
+}
+
+.modal-body .coordinates {
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 15px;
+    line-height: 1.6;
 }
 </style>
