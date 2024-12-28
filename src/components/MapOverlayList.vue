@@ -79,7 +79,8 @@ export default {
             showDisambiguation: false,
             clickedImages: [],
             clickPosition: { x: 0, y: 0 },
-            isExpanded: false
+            isExpanded: false,
+            openSeaMapLayer: null
         }
     },
     watch: {
@@ -94,6 +95,7 @@ export default {
     mounted () {
         this.fetchAvailableImages()
         this.setupClickHandler()
+        this.addOpenSeaMapOverlay()
 
         this.viewer.camera.moveEnd.addEventListener(() => {
             this.fetchAvailableImages()
@@ -220,6 +222,12 @@ export default {
 
             const layer = this.viewer.scene.imageryLayers.addImageryProvider(imageryProvider)
             this.imageOverlayEntities.set(image.id, layer)
+
+            // Keep OpenSeaMap layer on top
+            if (this.openSeaMapLayer) {
+                this.viewer.scene.imageryLayers.raiseToTop(this.openSeaMapLayer)
+                this.viewer.scene.requestRender()
+            }
         },
 
         formatDate (dateString) {
@@ -234,6 +242,17 @@ export default {
 
         toggleExpanded () {
             this.isExpanded = !this.isExpanded
+            this.viewer.scene.requestRender()
+        },
+
+        addOpenSeaMapOverlay () {
+            const provider = new UrlTemplateImageryProvider({
+                url: 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+                minimumLevel: 0,
+                maximumLevel: 18
+            })
+            this.openSeaMapLayer = this.viewer.scene.imageryLayers.addImageryProvider(provider)
+            this.viewer.scene.imageryLayers.raiseToTop(this.openSeaMapLayer)
             this.viewer.scene.requestRender()
         }
     }
