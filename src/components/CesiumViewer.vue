@@ -289,7 +289,6 @@ export default {
         createViewer (online) {
             if (online) {
                 console.log('creating online viewer')
-                const imageryProviders = this.createAdditionalProviders()
                 return new Viewer(
                     'cesiumContainer',
                     {
@@ -301,11 +300,11 @@ export default {
                         scene3DOnly: false,
                         selectionIndicator: false,
                         shadows: true,
+                        baseLayerPicker: false, // Disable default picker
                         // eslint-disable-next-line
                         baseLayer: new ImageryLayer.fromProviderAsync(
                             IonImageryProvider.fromAssetId(3954)
                         ),
-                        imageryProviderViewModels: imageryProviders,
                         orderIndependentTranslucency: false,
                         useBrowserRecommendedResolution: false
                     }

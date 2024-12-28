@@ -1,32 +1,63 @@
 <template>
-    <div>
-        <div class="image-overlay-list" :class="{ collapsed: !isExpanded }">
-            <div class="list-header" @click="toggleExpanded">
-                <span>Image Overlays</span>
-                <span class="expand-icon">{{ isExpanded ? '▼' : '▶' }}</span>
+    <div class="layer-picker-container">
+        <!-- Layer Picker Dialog -->
+        <div v-if="showLayerPicker" class="image-overlay-list cesium-baseLayerPicker-dropDown">
+            <!-- Base Layers Section -->
+            <div class="layer-section">
+                <div class="layer-section-title">Base Maps</div>
+                <div v-for="layer in baseLayers"
+                     :key="layer.name"
+                     class="layer-item"
+                     @click="selectBaseLayer(layer)">
+                    <img :src="layer.iconUrl" class="layer-icon" :alt="layer.name">
+                    <div class="layer-info">
+                        <div class="layer-name">{{ layer.name }}</div>
+                        <div class="layer-description">{{ layer.tooltip }}</div>
+                    </div>
+                    <input type="radio"
+                           :name="'base-layer'"
+                           :checked="layer === selectedBaseLayer"
+                           @change="selectBaseLayer(layer)">
+                </div>
             </div>
-            <div class="list-container" v-show="isExpanded">
+
+            <!-- User Overlays Section -->
+            <div class="layer-section">
+                <div class="layer-section-title">Overlays</div>
                 <div v-for="image in availableImages"
                      :key="image.id"
-                     class="list-item">
-                    <label class="checkbox-label">
-                        <input type="checkbox"
-                               :checked="isImageSelected(image)"
-                               @change="toggleImageOverlay(image)">
-                        <div class="image-info">
-                            <div class="image-title">{{ image.title || 'Untitled' }}</div>
-                            <div class="image-description" v-if="image.description">{{ image.description }}</div>
-                            <div class="image-date">{{ formatDate(image.created_at) }}</div>
+                     class="layer-item"
+                     @mouseenter="highlightRectangle(image)"
+                     @mouseleave="unhighlightRectangle(image)">
+                    <div class="layer-info">
+                        <div class="layer-name">{{ image.title || 'Untitled' }}</div>
+                        <div class="layer-description">
+                            {{ formatDate(image.created_at) }}
                         </div>
-                    </label>
+                    </div>
+                    <input type="checkbox"
+                           :checked="isImageSelected(image)"
+                           @change="toggleImageOverlay(image)">
+                </div>
+            </div>
+
+            <!-- Navigation Overlays -->
+            <div class="layer-section">
+                <div class="layer-section-title">Navigation</div>
+                <div class="layer-item">
+                    <div class="layer-info">
+                        <div class="layer-name">OpenSeaMap</div>
+                        <div class="layer-description">Nautical navigation data</div>
+                    </div>
+                    <input type="checkbox"
+                           v-model="showSeamarks"
+                           @change="toggleSeamarks">
                 </div>
             </div>
         </div>
 
         <!-- Disambiguation Dialog -->
-        <div v-if="showDisambiguation"
-             class="disambiguation-dialog"
-             :style="{ left: clickPosition.x + 'px', top: clickPosition.y + 'px' }">
+        <div v-if="showDisambiguation" class="disambiguation-dialog" :style="disambiguationStyle">
             <div class="dialog-header">
                 <h3>Overlapping Images</h3>
                 <button class="close-button" @click="closeDisambiguation">&times;</button>
@@ -34,7 +65,9 @@
             <div class="overlapping-images">
                 <div v-for="image in clickedImages"
                      :key="image.id"
-                     class="image-entry">
+                     class="image-entry"
+                     @mouseenter="highlightRectangle(image)"
+                     @mouseleave="unhighlightRectangle(image)">
                     <div class="image-header">
                         <h4>{{ image.title || 'Untitled' }}</h4>
                         <input type="checkbox"
@@ -42,7 +75,7 @@
                                @change="toggleImageOverlay(image)">
                     </div>
                     <div class="image-details">
-                        <div v-if="image.description" class="description">{{ image.description }}</div>
+                        <div class="description">{{ image.description || 'No description' }}</div>
                         <div class="date">{{ formatDate(image.created_at) }}</div>
                     </div>
                 </div>
@@ -59,7 +92,10 @@ import {
     Color,
     ScreenSpaceEventHandler,
     ScreenSpaceEventType,
-    defined
+    defined,
+    IonImageryProvider,
+    ImageryLayer,
+    buildModuleUrl
 } from 'cesium'
 
 export default {
@@ -79,29 +115,121 @@ export default {
             showDisambiguation: false,
             clickedImages: [],
             clickPosition: { x: 0, y: 0 },
-            isExpanded: false,
-            openSeaMapLayer: null
-        }
-    },
-    watch: {
-        isExpanded (newValue) {
-            // Show/hide rectangles based on expanded state
-            this.boundingRectangles.forEach(entity => {
-                entity.show = newValue
-            })
-            this.viewer.scene.requestRender()
+            openSeaMapLayer: null,
+            showSeamarks: false,
+            selectedBaseLayer: null,
+            showLayerPicker: false,
+            baseLayers: [
+                {
+                    name: 'Sentinel-2',
+                    iconUrl: buildModuleUrl('Widgets/Images/ImageryProviders/sentinel-2.png'),
+                    tooltip: 'Sentinel-2 satellite imagery',
+                    creationFunction: async () => {
+                        const provider = await IonImageryProvider.fromAssetId(3954)
+                        return new ImageryLayer(provider)
+                    }
+                },
+                {
+                    name: 'Bing Maps Aerial',
+                    iconUrl: buildModuleUrl('Widgets/Images/ImageryProviders/bingAerial.png'),
+                    tooltip: 'Bing Maps aerial imagery',
+                    creationFunction: async () => {
+                        const provider = await IonImageryProvider.fromAssetId(2)
+                        return new ImageryLayer(provider)
+                    }
+                },
+                {
+                    name: 'OpenStreetMap',
+                    iconUrl: buildModuleUrl('Widgets/Images/ImageryProviders/openStreetMap.png'),
+                    tooltip: 'OpenStreetMap imagery',
+                    creationFunction: () => {
+                        const provider = new UrlTemplateImageryProvider({
+                            url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            maximumLevel: 19
+                        })
+                        return new ImageryLayer(provider)
+                    }
+                }
+            ]
         }
     },
     mounted () {
+        this.addLayerPickerButton()
         this.fetchAvailableImages()
         this.setupClickHandler()
-        this.addOpenSeaMapOverlay()
+
+        // Set Sentinel-2 as initial base layer
+        this.selectBaseLayer(this.baseLayers[0])
 
         this.viewer.camera.moveEnd.addEventListener(() => {
             this.fetchAvailableImages()
         })
+
+        // Close layer picker when clicking outside
+        document.addEventListener('click', this.handleOutsideClick)
+    },
+    beforeDestroy () {
+        document.removeEventListener('click', this.handleOutsideClick)
     },
     methods: {
+        addLayerPickerButton () {
+            const toolbar = document.getElementsByClassName('cesium-viewer-toolbar')[0]
+            const wrapper = document.createElement('span')
+            wrapper.classList.add('cesium-navigationHelpButton-wrapper')
+
+            wrapper.innerHTML = `
+                <button type="button"
+                        id="cesium-layer-button"
+                        class="cesium-button cesium-toolbar-button"
+                        title="Base layers and overlays">
+                    <i class="fas fa-layer-group"></i>
+                </button>
+            `.trim()
+
+            toolbar.appendChild(wrapper)
+
+            const button = document.getElementById('cesium-layer-button')
+            button.addEventListener('click', this.toggleLayerPicker)
+        },
+        handleOutsideClick (event) {
+            const picker = document.querySelector('.image-overlay-list')
+            const button = document.getElementById('cesium-layer-button')
+            if (this.showLayerPicker &&
+                picker &&
+                button &&
+                !picker.contains(event.target) &&
+                !button.contains(event.target)) {
+                this.showLayerPicker = false
+                // Update rectangle visibility
+                this.boundingRectangles.forEach(entity => {
+                    entity.show = false
+                })
+                this.viewer.scene.requestRender()
+            }
+        },
+        async selectBaseLayer (layer) {
+            // Remove current base layer if it exists
+            if (this.viewer.scene.imageryLayers.length > 0) {
+                this.viewer.scene.imageryLayers.remove(this.viewer.scene.imageryLayers.get(0))
+            }
+
+            // Create and add new base layer
+            const newLayer = await layer.creationFunction()
+            this.viewer.scene.imageryLayers.add(newLayer, 0)
+            this.selectedBaseLayer = layer
+            this.viewer.scene.requestRender()
+        },
+
+        toggleSeamarks () {
+            if (this.showSeamarks) {
+                this.addOpenSeaMapOverlay()
+            } else if (this.openSeaMapLayer) {
+                this.viewer.scene.imageryLayers.remove(this.openSeaMapLayer)
+                this.openSeaMapLayer = null
+            }
+            this.viewer.scene.requestRender()
+        },
+
         setupClickHandler () {
             const handler = new ScreenSpaceEventHandler(this.viewer.scene.canvas)
             handler.setInputAction((click) => {
@@ -171,11 +299,31 @@ export default {
                         outlineColor: Color.WHITE
                     },
                     imageData: image,
-                    show: this.isExpanded
+                    show: this.showLayerPicker
                 })
+                // Add cursor style
+                entity.cursor = 'pointer'
                 this.boundingRectangles.set(image.id, entity)
             })
             this.viewer.scene.requestRender()
+        },
+
+        highlightRectangle (image) {
+            const entity = this.boundingRectangles.get(image.id)
+            if (entity) {
+                entity.rectangle.material = Color.ORANGE.withAlpha(0.5)
+                entity.rectangle.outlineColor = Color.YELLOW
+                this.viewer.scene.requestRender()
+            }
+        },
+
+        unhighlightRectangle (image) {
+            const entity = this.boundingRectangles.get(image.id)
+            if (entity) {
+                entity.rectangle.material = Color.WHITE.withAlpha(0.2)
+                entity.rectangle.outlineColor = Color.WHITE
+                this.viewer.scene.requestRender()
+            }
         },
 
         isImageSelected (image) {
@@ -238,6 +386,11 @@ export default {
         closeDisambiguation () {
             this.showDisambiguation = false
             this.clickedImages = []
+            // Update rectangle visibility
+            this.boundingRectangles.forEach(entity => {
+                entity.show = this.showLayerPicker
+            })
+            this.viewer.scene.requestRender()
         },
 
         toggleExpanded () {
@@ -254,24 +407,109 @@ export default {
             this.openSeaMapLayer = this.viewer.scene.imageryLayers.addImageryProvider(provider)
             this.viewer.scene.imageryLayers.raiseToTop(this.openSeaMapLayer)
             this.viewer.scene.requestRender()
+        },
+
+        toggleLayerPicker () {
+            this.showLayerPicker = !this.showLayerPicker
+            // Update rectangle visibility
+            this.boundingRectangles.forEach(entity => {
+                entity.show = this.showLayerPicker
+            })
+            this.viewer.scene.requestRender()
+        }
+    },
+    computed: {
+        disambiguationStyle () {
+            if (!this.clickPosition) return {}
+
+            return {
+                left: `${this.clickPosition.x}px`,
+                top: `${this.clickPosition.y}px`
+            }
         }
     }
 }
 </script>
 
 <style scoped>
+.layer-picker-container {
+    display: contents;
+}
+
+#layerPickerButton {
+    display: inline-block;
+    position: relative;
+    margin: 0;
+}
+
 .image-overlay-list {
-    margin-left: 10px;
-    background-color: rgba(40, 40, 40, 0.7);
+    position: fixed;
+    top: 44px;
+    right: 5px;
+    background-color: rgba(38, 38, 38, 0.95);
     padding: 10px;
+    margin: 20px;
     border-radius: 5px;
     border: 1px solid #444;
     max-width: 300px;
-    transition: all 0.3s ease;
+    max-height: calc(100vh - 50px);
+    overflow-y: auto;
+    z-index: 1000;
 }
 
-.image-overlay-list.collapsed {
-    padding-bottom: 4px;
+.cesium-baseLayerPicker-dropDown {
+    box-sizing: content-box;
+    padding: 5px;
+    top: 130px;
+    border-radius: 5px;
+    transform-origin: center top;
+    visibility: visible;
+    opacity: 1;
+}
+
+.layer-section {
+    margin-bottom: 12px;
+}
+
+.layer-section-title {
+    color: #edffff;
+    font-size: 0.9em;
+    font-weight: bold;
+    padding: 4px 0;
+    border-bottom: 1px solid #555;
+    margin-bottom: 8px;
+}
+
+.layer-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 0;
+    cursor: pointer;
+    color: #edffff;
+}
+
+.layer-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.layer-icon {
+    width: 24px;
+    height: 24px;
+    margin-right: 8px;
+    border: 1px solid #555;
+}
+
+.layer-info {
+    flex: 1;
+}
+
+.layer-name {
+    font-size: 0.9em;
+}
+
+.layer-description {
+    font-size: 0.8em;
+    color: #aaa;
 }
 
 .list-header {
@@ -347,21 +585,21 @@ export default {
 }
 
 /* Scrollbar styling */
-.list-container::-webkit-scrollbar {
+.image-overlay-list::-webkit-scrollbar {
     width: 8px;
 }
 
-.list-container::-webkit-scrollbar-track {
+.image-overlay-list::-webkit-scrollbar-track {
     background: rgba(0, 0, 0, 0.2);
     border-radius: 4px;
 }
 
-.list-container::-webkit-scrollbar-thumb {
+.image-overlay-list::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.3);
     border-radius: 4px;
 }
 
-.list-container::-webkit-scrollbar-thumb:hover {
+.image-overlay-list::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.4);
 }
 
