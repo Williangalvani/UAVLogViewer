@@ -29,7 +29,7 @@
                      class="layer-item"
                      @mouseenter="highlightRectangle(image)"
                      @mouseleave="unhighlightRectangle(image)">
-                    <div class="layer-info">
+                    <div class="layer-info" @click="toggleImageOverlay(image)">
                         <div class="layer-name">{{ image.title || 'Untitled' }}</div>
                         <div class="layer-description">
                             {{ formatDate(image.created_at) }}
@@ -44,14 +44,15 @@
             <!-- Navigation Overlays -->
             <div class="layer-section">
                 <div class="layer-section-title">Navigation</div>
-                <div class="layer-item">
+                <div class="layer-item"
+                     @click="showSeamarks = !showSeamarks; toggleSeamarks()">
                     <div class="layer-info">
                         <div class="layer-name">OpenSeaMap</div>
                         <div class="layer-description">Nautical navigation data</div>
                     </div>
                     <input type="checkbox"
                            v-model="showSeamarks"
-                           @change="toggleSeamarks">
+                           @click.stop>
                 </div>
             </div>
         </div>
@@ -149,6 +150,44 @@ export default {
                         })
                         return new ImageryLayer(provider)
                     }
+                },
+                {
+                    name: 'StatKart',
+                    iconUrl: require('../assets/statkart.jpg').default,
+                    tooltip: 'Statkart aerial imagery \nhttp://statkart.no/',
+                    creationFunction: () => {
+                        const provider = new UrlTemplateImageryProvider({
+                            url: 'http://opencache.statkart.no/gatekeeper/gk/gk.open_gmaps?layers=topo4&zoom={z}&x={x}&y={y}',
+                            credit: 'Map tiles by Statkart.'
+                        })
+                        return new ImageryLayer(provider)
+                    }
+                },
+                {
+                    name: 'MapTiler',
+                    iconUrl: require('../assets/maptiler.png').default,
+                    tooltip: 'Maptiler satellite imagery http://maptiler.com/',
+                    creationFunction: () => {
+                        const provider = new UrlTemplateImageryProvider({
+                            url: 'https://api.maptiler.com/tiles/satellite-v2/{z}/{x}/{y}.jpg?key=o3JREHNnXex8WSPPm2BU',
+                            minimumLevel: 0,
+                            maximumLevel: 20,
+                            credit: 'https://www.maptiler.com/copyright'
+                        })
+                        return new ImageryLayer(provider)
+                    }
+                },
+                {
+                    name: 'Eniro',
+                    iconUrl: require('../assets/eniro.png').default,
+                    tooltip: 'Eniro aerial imagery \nhttp://map.eniro.com/',
+                    creationFunction: () => {
+                        const provider = new UrlTemplateImageryProvider({
+                            url: '/eniro/{z}/{x}/{reverseY}.png',
+                            credit: 'Map tiles by Eniro.'
+                        })
+                        return new ImageryLayer(provider)
+                    }
                 }
             ]
         }
@@ -200,10 +239,11 @@ export default {
                 !picker.contains(event.target) &&
                 !button.contains(event.target)) {
                 this.showLayerPicker = false
-                // Update rectangle visibility
+                // Remove all rectangles when closing
                 this.boundingRectangles.forEach(entity => {
-                    entity.show = false
+                    this.viewer.entities.remove(entity)
                 })
+                this.boundingRectangles.clear()
                 this.viewer.scene.requestRender()
             }
         },
@@ -271,7 +311,10 @@ export default {
                 }
 
                 this.availableImages = await response.json()
-                this.updateBoundingRectangles()
+                // Only update rectangles if picker is open
+                if (this.showLayerPicker) {
+                    this.updateBoundingRectangles()
+                }
             } catch (error) {
                 console.error('Error fetching images:', error)
             }
@@ -411,10 +454,15 @@ export default {
 
         toggleLayerPicker () {
             this.showLayerPicker = !this.showLayerPicker
-            // Update rectangle visibility
-            this.boundingRectangles.forEach(entity => {
-                entity.show = this.showLayerPicker
-            })
+            if (this.showLayerPicker) {
+                this.updateBoundingRectangles()
+            } else {
+                // Remove all rectangles when closing
+                this.boundingRectangles.forEach(entity => {
+                    this.viewer.entities.remove(entity)
+                })
+                this.boundingRectangles.clear()
+            }
             this.viewer.scene.requestRender()
         }
     },
