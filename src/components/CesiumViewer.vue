@@ -13,27 +13,7 @@
                 </tr>
               </tbody>
             </table>
-            <div class="image-overlay-list">
-                <div class="list-header">Image Overlays</div>
-                <div class="list-container">
-                    <div v-for="image in availableImages"
-                         :key="image.id"
-                         class="list-item"
-                         @mouseover="showPreviewRectangle(image)"
-                         @mouseout="clearPreviewRectangle">
-                        <label class="checkbox-label">
-                            <input type="checkbox"
-                                   :checked="isImageSelected(image)"
-                                   @change="toggleImageOverlay(image)">
-                            <div class="image-info">
-                                <div class="image-title">{{ image.title || 'Untitled' }}</div>
-                                <div class="image-description" v-if="image.description">{{ image.description }}</div>
-                                <div class="image-date">{{ formatDate(image.created_at) }}</div>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-            </div>
+            <MapOverlayList :viewer="viewer" v-if="viewer" />
             <CesiumSettingsWidget />
         </div>
         <div id="cesiumContainer"></div>
@@ -43,13 +23,20 @@
             <div class="upload-dialog">
                 <h3>Upload Bathymetry</h3>
                 <div class="form-group">
-                    <label>Title</label>
-                    <input type="text" v-model="bathymetryTitle" placeholder="Enter title" class="cesium-button">
+                    <label>Title <span class="required">*</span></label>
+                    <input type="text"
+                           v-model="bathymetryTitle"
+                           placeholder="Enter title"
+                           class="cesium-button"
+                           ref="titleInput"
+                           @keyup.enter="confirmUpload">
                 </div>
                 <div class="form-group">
                     <label>Description</label>
                     <textarea
-                      v-model="bathymetryDescription" placeholder="Enter description" class="cesium-button">
+                      v-model="bathymetryDescription"
+                      placeholder="Enter description"
+                      class="cesium-button">
                     </textarea>
                 </div>
                 <div class="dialog-buttons">
@@ -127,6 +114,8 @@ import {
     isPointInPolygon
 } from './cesiumExtra/boundingPolygon.js'
 
+import MapOverlayList from './MapOverlayList.vue'
+
 Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI2MmM0MDgzZC00OGVkLTRjZ' +
     'TItOWI2MS1jMGVhYTM2MmMzODYiLCJpZCI6MjczNywiaWF0IjoxNjYyMTI4MjkxfQ.fPqhawtYLhwyZirKCi8fEjPEIn1CjYqETvA0bYYhWRA'
 
@@ -157,16 +146,13 @@ export default {
             bathymetryBounds: null,
             bathymetryTitle: '',
             bathymetryDescription: '',
-            availableImages: [],
-            selectedImages: new Set(),
-            previewRectangle: null,
-            imageOverlayEntities: new Map(),
             showUploadDialog: false,
             pendingUpload: false
         }
     },
     components: {
-        CesiumSettingsWidget
+        CesiumSettingsWidget,
+        MapOverlayList
     },
     created () {
         this.updateShader()
@@ -286,14 +272,6 @@ export default {
             } else {
                 this.setup2(this.correctedTrajectory)
             }
-
-            // Add camera movement event listener to update available images
-            this.viewer.camera.moveEnd.addEventListener(() => {
-                this.fetchAvailableImages()
-            })
-
-            // Initial fetch of available images
-            await this.fetchAvailableImages()
         },
         updateShader () {
             // eslint-disable-next-line camelcase
@@ -1481,7 +1459,7 @@ export default {
         async uploadBathymetry () {
             if (!this.bathymetryData || !this.bathymetryBounds) {
                 console.error('No bathymetry data available')
-                return
+                return null
             }
 
             try {
@@ -1536,59 +1514,83 @@ export default {
                     right: this.bathymetryBounds.east * 180 / Math.PI
                 }
 
+                return { blob, bounds }
+            } catch (error) {
+                console.error('Failed to process image:', error)
+                return null
+            }
+        },
+        async confirmUpload () {
+            if (!this.bathymetryTitle.trim()) {
+                this.$bvToast.toast('Please enter a title', {
+                    title: 'Required Field',
+                    variant: 'warning',
+                    solid: true
+                })
+                return
+            }
+
+            this.showUploadDialog = false
+            if (this.pendingUpload) {
+                this.pendingUpload = false
+
+                const processedData = await this.uploadBathymetry()
+                if (!processedData) {
+                    this.$bvToast.toast('Failed to process bathymetry data', {
+                        title: 'Error',
+                        variant: 'danger',
+                        solid: true
+                    })
+                    return
+                }
+
+                const { blob, bounds } = processedData
                 const formData = new FormData()
                 formData.append('file', blob, 'bathymetry.png')
                 formData.append('coords_str', JSON.stringify(bounds))
                 formData.append('title', this.bathymetryTitle || 'Untitled Bathymetry')
                 formData.append('description', this.bathymetryDescription || '')
 
-                const response = await fetch('http://localhost:8000/upload/', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        Accept: 'application/json'
-                    },
-                    credentials: 'same-origin'
-                })
+                try {
+                    const response = await fetch('http://localhost:8000/upload/', {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            Accept: 'application/json'
+                        },
+                        credentials: 'same-origin'
+                    })
 
-                if (!response.ok) {
-                    throw new Error(`Upload failed: ${response.statusText}`)
+                    if (!response.ok) {
+                        throw new Error(`Upload failed: ${response.statusText}`)
+                    }
+
+                    const result = await response.json()
+                    console.log('Upload successful:', result)
+
+                    // Change button back to ship icon after successful upload
+                    const button = document.getElementById('cesium-bathymetry-button')
+                    button.innerHTML = '<i class="fas fa-ship" style="font-style: unset;"></i>'
+                    button.title = 'Generate Bathymetry'
+                    this.bathymetryData = null
+                    this.bathymetryBounds = null
+                    this.bathymetryTitle = ''
+                    this.bathymetryDescription = ''
+
+                    // Show success message
+                    this.$bvToast.toast('Bathymetry uploaded successfully!', {
+                        title: 'Success',
+                        variant: 'success',
+                        solid: true
+                    })
+                } catch (error) {
+                    console.error('Upload failed:', error)
+                    this.$bvToast.toast('Failed to upload bathymetry', {
+                        title: 'Error',
+                        variant: 'danger',
+                        solid: true
+                    })
                 }
-
-                const result = await response.json()
-                console.log('Upload successful:', result)
-
-                // Change button back to ship icon after successful upload
-                const button = document.getElementById('cesium-bathymetry-button')
-                button.innerHTML = '<i class="fas fa-ship" style="font-style: unset;"></i>'
-                button.title = 'Generate Bathymetry'
-                this.bathymetryData = null
-                this.bathymetryBounds = null
-                this.bathymetryTitle = ''
-                this.bathymetryDescription = ''
-
-                // Show success message
-                this.$bvToast.toast('Bathymetry uploaded successfully!', {
-                    title: 'Success',
-                    variant: 'success',
-                    solid: true
-                })
-            } catch (error) {
-                console.error('Upload failed:', error)
-
-                // Show error message
-                this.$bvToast.toast('Failed to upload bathymetry', {
-                    title: 'Error',
-                    variant: 'danger',
-                    solid: true
-                })
-            }
-        },
-        async confirmUpload () {
-            this.showUploadDialog = false
-            if (this.pendingUpload) {
-                this.pendingUpload = false
-                await this.uploadBathymetry()
             }
         },
         cancelUpload () {
@@ -2205,5 +2207,20 @@ export default {
 .image-date {
     font-size: 0.8em;
     color: #888;
+}
+</style>
+
+<style scoped>
+/* ... existing styles ... */
+
+.required {
+    color: #ff4444;
+    margin-left: 4px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #edffff;
 }
 </style>
