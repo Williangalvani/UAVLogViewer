@@ -152,6 +152,7 @@ export default {
             openSeaMapLayer: null,
             showSeamarks: false,
             selectedBaseLayer: null,
+            baseLayerInstance: null,
             showLayerPicker: false,
             showDetailsModal: false,
             selectedImage: null,
@@ -283,25 +284,70 @@ export default {
             }
         },
         async selectBaseLayer (layer) {
+            console.log('Selecting base layer:', layer.name)
+            console.log('Current layer count:', this.viewer.scene.imageryLayers.length)
+
             // Remove current base layer if it exists
-            if (this.viewer.scene.imageryLayers.length > 0) {
-                this.viewer.scene.imageryLayers.remove(this.viewer.scene.imageryLayers.get(0))
+            if (this.baseLayerInstance) {
+                console.log('Removing existing base layer')
+                try {
+                    // Make sure the layer still exists in the collection
+                    const index = this.viewer.scene.imageryLayers.indexOf(this.baseLayerInstance)
+                    if (index !== -1) {
+                        this.viewer.scene.imageryLayers.remove(this.baseLayerInstance, false)
+                    }
+                } catch (e) {
+                    console.warn('Error removing base layer:', e)
+                }
+                this.baseLayerInstance = null
             }
 
             // Create and add new base layer
+            console.log('Creating new base layer')
             const newLayer = await layer.creationFunction()
-            this.viewer.scene.imageryLayers.add(newLayer, 0)
+
+            // Remove any existing layer at index 0
+            if (this.viewer.scene.imageryLayers.length > 0) {
+                this.viewer.scene.imageryLayers.remove(this.viewer.scene.imageryLayers.get(0), false)
+            }
+
+            // Add the new layer at index 0
+            this.baseLayerInstance = this.viewer.scene.imageryLayers.add(newLayer, 0)
             this.selectedBaseLayer = layer
+
+            // Ensure OpenSeaMap stays on top if active
+            if (this.openSeaMapLayer) {
+                console.log('Raising OpenSeaMap to top')
+                this.viewer.scene.imageryLayers.raiseToTop(this.openSeaMapLayer)
+            }
+
+            console.log('New layer count:', this.viewer.scene.imageryLayers.length)
             this.viewer.scene.requestRender()
         },
 
         toggleSeamarks () {
+            console.log('Toggling seamarks, current state:', this.showSeamarks)
+            console.log('Current layer count:', this.viewer.scene.imageryLayers.length)
+
             if (this.showSeamarks) {
-                this.addOpenSeaMapOverlay()
+                if (!this.openSeaMapLayer) {
+                    console.log('Creating new OpenSeaMap layer')
+                    const provider = new UrlTemplateImageryProvider({
+                        url: 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+                        minimumLevel: 0,
+                        maximumLevel: 18
+                    })
+                    this.openSeaMapLayer = this.viewer.scene.imageryLayers.addImageryProvider(provider)
+                }
+                console.log('Raising OpenSeaMap to thmmmop')
+                this.viewer.scene.imageryLayers.raiseToTop(this.openSeaMapLayer)
             } else if (this.openSeaMapLayer) {
+                console.log('Removing OpenSeaMap layer')
                 this.viewer.scene.imageryLayers.remove(this.openSeaMapLayer)
                 this.openSeaMapLayer = null
             }
+
+            console.log('New layer count:', this.viewer.scene.imageryLayers.length)
             this.viewer.scene.requestRender()
         },
 
@@ -408,7 +454,11 @@ export default {
         },
 
         toggleImageOverlay (image) {
+            console.log('Toggling image overlay:', image.title)
+            console.log('Current layer count:', this.viewer.scene.imageryLayers.length)
+
             if (this.isImageSelected(image)) {
+                console.log('Removing overlay')
                 // Remove overlay
                 this.selectedImages.delete(image.id)
                 if (this.imageOverlayEntities.has(image.id)) {
@@ -416,16 +466,26 @@ export default {
                     this.imageOverlayEntities.delete(image.id)
                 }
             } else {
+                console.log('Adding overlay')
                 // Add overlay
                 this.selectedImages.add(image.id)
                 this.addImageOverlay(image)
             }
+
+            console.log('New layer count:', this.viewer.scene.imageryLayers.length)
             this.viewer.scene.requestRender()
         },
 
         addImageOverlay (image) {
+            console.log('Adding image overlay:', image.title)
+            console.log('Current layer count:', this.viewer.scene.imageryLayers.length)
+
+            // Remove existing layer if present
             if (this.imageOverlayEntities.has(image.id)) {
-                this.viewer.scene.imageryLayers.remove(this.imageOverlayEntities.get(image.id))
+                console.log('Removing existing overlay')
+                const existingLayer = this.imageOverlayEntities.get(image.id)
+                this.viewer.scene.imageryLayers.remove(existingLayer)
+                this.imageOverlayEntities.delete(image.id)
             }
 
             // Calculate margin as 5% of the rectangle size
@@ -433,6 +493,7 @@ export default {
             const lonSize = Math.abs(image.right - image.left)
             const margin = Math.max(latSize, lonSize) * 0.2
 
+            console.log('Creating new overlay layer')
             const imageryProvider = new UrlTemplateImageryProvider({
                 url: `http://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
                 rectangle: Rectangle.fromDegrees(
@@ -450,9 +511,12 @@ export default {
 
             // Keep OpenSeaMap layer on top
             if (this.openSeaMapLayer) {
+                console.log('Raising OpenSeaMap to top')
                 this.viewer.scene.imageryLayers.raiseToTop(this.openSeaMapLayer)
-                this.viewer.scene.requestRender()
             }
+
+            console.log('New layer count:', this.viewer.scene.imageryLayers.length)
+            this.viewer.scene.requestRender()
         },
 
         formatDate (dateString) {
@@ -472,17 +536,6 @@ export default {
 
         toggleExpanded () {
             this.isExpanded = !this.isExpanded
-            this.viewer.scene.requestRender()
-        },
-
-        addOpenSeaMapOverlay () {
-            const provider = new UrlTemplateImageryProvider({
-                url: 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
-                minimumLevel: 0,
-                maximumLevel: 18
-            })
-            this.openSeaMapLayer = this.viewer.scene.imageryLayers.addImageryProvider(provider)
-            this.viewer.scene.imageryLayers.raiseToTop(this.openSeaMapLayer)
             this.viewer.scene.requestRender()
         },
 
