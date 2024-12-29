@@ -7,6 +7,7 @@ import PlotlyPopup from '../../src/components/PlotlyPopup.vue'
 Vue.use(Router)
 
 export default new Router({
+    mode: 'history',
     routes: [
         {
             path: '/',
@@ -21,6 +22,11 @@ export default new Router({
         {
             path: '/v/:id',
             name: 'View',
+            component: Home
+        },
+        {
+            path: '/oauth2callback',
+            name: 'OAuth2Callback',
             component: Home
         }
     ]

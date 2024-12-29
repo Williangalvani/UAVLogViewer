@@ -115,6 +115,24 @@
                 </div>
             </div>
         </div>
+
+        <!-- Login Modal -->
+        <div v-show="showLoginModal" class="login-modal">
+            <div class="login-modal-content">
+                <div id="login-section" v-show="!currentUser">
+                    <h3>Sign In</h3>
+                    <div id="g_id_signin"></div>
+                </div>
+                <div id="user-info" v-show="currentUser">
+                    <div class="user-details">
+                        <div class="user-name">{{ currentUser?.name }}</div>
+                    </div>
+                    <button class="logout-button" @click="logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -156,6 +174,20 @@ export default {
             showLayerPicker: false,
             showDetailsModal: false,
             selectedImage: null,
+            currentUser: null,
+            showLoginModal: false,
+            oauthConfig: {
+                // eslint-disable-next-line camelcase
+                client_id: '977629193181-809k8b8nm5rc2d63lohi9qacl5r34s8t.apps.googleusercontent.com',
+                // eslint-disable-next-line camelcase
+                redirect_uri: 'https://localhost:8080',
+                // eslint-disable-next-line camelcase
+                response_type: 'token',
+                scope: 'email profile',
+                // eslint-disable-next-line camelcase
+                include_granted_scopes: 'true',
+                state: 'pass-through-value'
+            },
             baseLayers: [
                 {
                     name: 'Sentinel-2',
@@ -232,6 +264,8 @@ export default {
         this.addLayerPickerButton()
         this.fetchAvailableImages()
         this.setupClickHandler()
+        this.loadGoogleSignIn()
+        this.checkLoginStatus()
 
         // Set Sentinel-2 as initial base layer
         this.selectBaseLayer(this.baseLayers[0])
@@ -249,10 +283,11 @@ export default {
     methods: {
         addLayerPickerButton () {
             const toolbar = document.getElementsByClassName('cesium-viewer-toolbar')[0]
-            const wrapper = document.createElement('span')
-            wrapper.classList.add('cesium-navigationHelpButton-wrapper')
 
-            wrapper.innerHTML = `
+            // Add layer picker button
+            const layerWrapper = document.createElement('span')
+            layerWrapper.classList.add('cesium-navigationHelpButton-wrapper')
+            layerWrapper.innerHTML = `
                 <button type="button"
                         id="cesium-layer-button"
                         class="cesium-button cesium-toolbar-button"
@@ -260,12 +295,99 @@ export default {
                     <i class="fas fa-layer-group"></i>
                 </button>
             `.trim()
+            toolbar.appendChild(layerWrapper)
 
-            toolbar.appendChild(wrapper)
+            // Add login button
+            const loginWrapper = document.createElement('span')
+            loginWrapper.classList.add('cesium-navigationHelpButton-wrapper')
+            loginWrapper.innerHTML = `
+                <button type="button"
+                        id="cesium-login-button"
+                        class="cesium-button cesium-toolbar-button"
+                        title="Login">
+                    <i class="fas fa-user"></i>
+                </button>
+            `.trim()
+            toolbar.appendChild(loginWrapper)
 
-            const button = document.getElementById('cesium-layer-button')
-            button.addEventListener('click', this.toggleLayerPicker)
+            const layerButton = document.getElementById('cesium-layer-button')
+            layerButton.addEventListener('click', this.toggleLayerPicker)
+
+            const loginButton = document.getElementById('cesium-login-button')
+            loginButton.addEventListener('click', this.toggleLoginModal)
         },
+
+        toggleLoginModal () {
+            this.showLoginModal = !this.showLoginModal
+        },
+
+        loadGoogleSignIn () {
+            const script = document.createElement('script')
+            script.src = 'https://accounts.google.com/gsi/client'
+            script.async = true
+            script.defer = true
+            document.head.appendChild(script)
+
+            script.onload = () => {
+                window.google.accounts.id.initialize({
+                    // eslint-disable-next-line camelcase
+                    client_id: this.oauthConfig.client_id,
+                    callback: this.handleCredentialResponse
+                })
+
+                window.google.accounts.id.renderButton(
+                    document.getElementById('g_id_signin'),
+                    {
+                        theme: 'outline',
+                        size: 'large',
+                        type: 'standard',
+                        text: 'signin_with',
+                        shape: 'rectangular',
+                        // eslint-disable-next-line camelcase
+                        logo_alignment: 'left'
+                    }
+                )
+            }
+        },
+
+        async handleCredentialResponse (response) {
+            try {
+                // Send the credential to backend for verification
+                const verifyResult = await fetch('http://localhost:8000/auth/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        token: response.credential
+                    })
+                })
+
+                if (!verifyResult.ok) {
+                    throw new Error('Failed to verify token')
+                }
+
+                // If verification successful, decode and store user info
+                const payload = JSON.parse(atob(response.credential.split('.')[1]))
+                this.currentUser = {
+                    id: payload.sub, // Google's unique user ID
+                    name: payload.name,
+                    email: payload.email,
+                    picture: payload.picture,
+                    // Store the verified status
+                    verified: true
+                }
+                this.showLoginModal = false
+                // Store in localStorage for persistence
+                localStorage.setItem('user', JSON.stringify(this.currentUser))
+                console.log('Stored verified user info:', this.currentUser)
+            } catch (error) {
+                console.error('Login error:', error)
+                this.currentUser = null
+                localStorage.removeItem('user')
+            }
+        },
+
         handleOutsideClick (event) {
             const picker = document.querySelector('.image-overlay-list')
             const button = document.getElementById('cesium-layer-button')
@@ -383,7 +505,8 @@ export default {
                     {
                         headers: {
                             accept: 'application/json'
-                        }
+                        },
+                        credentials: 'include'
                     }
                 )
 
@@ -578,6 +701,21 @@ export default {
 
         closeDetailsModal () {
             this.showDetailsModal = false
+        },
+
+        async checkLoginStatus () {
+            const savedUser = localStorage.getItem('user')
+            if (savedUser) {
+                this.currentUser = JSON.parse(savedUser)
+            }
+        },
+
+        async logout () {
+            this.currentUser = null
+            localStorage.removeItem('user')
+            window.google?.accounts.id.revoke(this.currentUser?.email, () => {
+                console.log('Google consent revoked')
+            })
         }
     },
     computed: {
@@ -926,5 +1064,97 @@ export default {
     border-radius: 4px;
     margin-top: 15px;
     line-height: 1.6;
+}
+
+.login-container {
+    padding: 10px 0;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    margin: 4px 0;
+}
+
+.user-details {
+    overflow: hidden;
+}
+
+.user-name {
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-email {
+    font-size: 0.8em;
+    color: #aaa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.logout-button {
+    background: none;
+    border: none;
+    color: #edffff;
+    padding: 4px 8px;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.logout-button:hover {
+    opacity: 1;
+}
+
+.login-modal {
+    position: fixed;
+    top: 44px;
+    right: 5px;
+    z-index: 2000;
+    display: block;
+}
+
+.login-modal-content {
+    background: rgba(38, 38, 38, 0.95);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #444;
+    min-width: 300px;
+    color: #edffff;
+    display: block;
+}
+
+.login-modal-content h3 {
+    color: #edffff;
+    margin: 0 0 16px 0;
+    text-align: center;
+}
+
+.google-signin-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: #4285f4;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    width: 100%;
+    margin: 10px 0;
+    transition: background-color 0.2s;
+}
+
+.google-signin-button:hover {
+    background: #357ae8;
 }
 </style>

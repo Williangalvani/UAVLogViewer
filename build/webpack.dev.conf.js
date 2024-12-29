@@ -55,6 +55,13 @@ const devWebpackConfig = merge(baseWebpackConfig, {
     open: config.dev.autoOpenBrowser,
    // publicPath: config.dev.assetsPublicPath,
     proxy: config.dev.proxyTable,
+    server: {
+      type: 'https',
+      options: {
+        key: path.join(__dirname, '../certs/localhost-key.pem'),
+        cert: path.join(__dirname, '../certs/localhost.pem')
+      }
+    }
   },
   plugins: [
     new ESLintPlugin({fix: true}),
