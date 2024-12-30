@@ -282,9 +282,10 @@ export default {
     },
     methods: {
         addLayerPickerButton () {
-            const toolbar = document.getElementsByClassName('cesium-viewer-toolbar')[0]
+            // Find the main menu bar
+            const mainToolbar = document.querySelector('.cesium-viewer-toolbar')
 
-            // Add layer picker button
+            // Add layer picker button at the end
             const layerWrapper = document.createElement('span')
             layerWrapper.classList.add('cesium-navigationHelpButton-wrapper')
             layerWrapper.innerHTML = `
@@ -295,26 +296,10 @@ export default {
                     <i class="fas fa-layer-group"></i>
                 </button>
             `.trim()
-            toolbar.appendChild(layerWrapper)
-
-            // Add login button
-            const loginWrapper = document.createElement('span')
-            loginWrapper.classList.add('cesium-navigationHelpButton-wrapper')
-            loginWrapper.innerHTML = `
-                <button type="button"
-                        id="cesium-login-button"
-                        class="cesium-button cesium-toolbar-button"
-                        title="Login">
-                    <i class="fas fa-user"></i>
-                </button>
-            `.trim()
-            toolbar.appendChild(loginWrapper)
+            mainToolbar.appendChild(layerWrapper)
 
             const layerButton = document.getElementById('cesium-layer-button')
             layerButton.addEventListener('click', this.toggleLayerPicker)
-
-            const loginButton = document.getElementById('cesium-login-button')
-            loginButton.addEventListener('click', this.toggleLoginModal)
         },
 
         toggleLoginModal () {
@@ -353,7 +338,7 @@ export default {
         async handleCredentialResponse (response) {
             try {
                 // Send the credential to backend for verification
-                const verifyResult = await fetch('http://localhost:8000/auth/verify', {
+                const verifyResult = await fetch('https://localhost:8000/auth/verify', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -501,7 +486,7 @@ export default {
                 const maxLon = (rectangle.east * 180 / Math.PI)
 
                 const response = await fetch(
-                    `http://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}&include_partial=true`,
+                    `https://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}&include_partial=true`,
                     {
                         headers: {
                             accept: 'application/json'
@@ -618,7 +603,7 @@ export default {
 
             console.log('Creating new overlay layer')
             const imageryProvider = new UrlTemplateImageryProvider({
-                url: `http://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
+                url: `https://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
                 rectangle: Rectangle.fromDegrees(
                     image.left - margin,
                     image.bottom - margin,

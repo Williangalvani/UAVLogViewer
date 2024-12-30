@@ -1551,13 +1551,13 @@ export default {
                 formData.append('description', this.bathymetryDescription || '')
 
                 try {
-                    const response = await fetch('http://localhost:8000/upload/', {
+                    const response = await fetch('https://localhost:8000/upload/', {
                         method: 'POST',
                         body: formData,
                         headers: {
                             Accept: 'application/json'
                         },
-                        credentials: 'same-origin'
+                        credentials: 'include'
                     })
 
                     if (!response.ok) {
@@ -1608,7 +1608,7 @@ export default {
                 const maxLon = (rectangle.east * 180 / Math.PI)
 
                 const response = await fetch(
-                    `http://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`,
+                    `https://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`,
                     {
                         headers: {
                             accept: 'application/json'
@@ -1656,7 +1656,7 @@ export default {
             const margin = Math.max(latSize, lonSize) * 0.2
 
             const imageryProvider = new UrlTemplateImageryProvider({
-                url: `http://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
+                url: `https://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
                 rectangle: Rectangle.fromDegrees(
                     image.left - margin,
                     image.bottom - margin,
@@ -1700,6 +1700,38 @@ export default {
         formatDate (dateString) {
             const date = DateTime.fromISO(dateString)
             return date.toLocaleString(DateTime.DATETIME_SHORT)
+        },
+        async uploadFile (file) {
+            const formData = new FormData()
+            formData.append('file', file)
+
+            try {
+                // Log the request details
+                console.log('Uploading file with credentials...')
+                const response = await fetch('https://localhost:8000/images/upload', {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                })
+
+                // Log the response headers
+                console.log('Response headers:', {
+                    'content-type': response.headers.get('content-type'),
+                    'set-cookie': response.headers.get('set-cookie')
+                })
+
+                if (!response.ok) {
+                    console.error('Upload failed with status:', response.status)
+                    throw new Error('Upload failed')
+                }
+
+                const result = await response.json()
+                console.log('Upload successful:', result)
+                return result
+            } catch (error) {
+                console.error('Upload error:', error)
+                throw error
+            }
         }
     },
     computed: {

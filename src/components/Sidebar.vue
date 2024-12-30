@@ -125,6 +125,7 @@
                 </div>
             </b-collapse>
         </div>
+        <google-login @login="handleLogin" @logout="handleLogout" />
     </div>
 </template>
 <script>
@@ -133,6 +134,7 @@ import Dropzone from './SideBarFileManager.vue'
 import MessageMenu from './SideBarMessageMenu.vue'
 import {store} from './Globals.js'
 import PlotSetup from './PlotSetup.vue'
+import GoogleLogin from './GoogleLogin.vue'
 
 export default {
     name: 'sidebar',
@@ -152,6 +154,16 @@ export default {
     methods: {
         setSelected (selected) {
             this.selected = selected
+        },
+
+        handleLogin (user) {
+            console.log('User logged in:', user)
+            // Add any login-specific logic here
+        },
+
+        handleLogout () {
+            console.log('User logged out')
+            // Add any logout-specific logic here
         },
 
         startCapture (displayMediaOptions) {
@@ -225,7 +237,7 @@ export default {
             this.downloadURL = URL.createObjectURL(this.blob)
         }
     },
-    components: {PlotSetup, MessageMenu, Dropzone}
+    components: {PlotSetup, MessageMenu, Dropzone, GoogleLogin}
 }
 </script>
 <style scoped>
