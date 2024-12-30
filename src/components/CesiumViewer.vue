@@ -105,6 +105,7 @@ import CesiumSettingsWidget from './widgets/CesiumSettingsWidget.vue'
 import ColorCoderMode from './cesiumExtra/colorCoderMode.js'
 import ColorCoderRange from './cesiumExtra/colorCoderRange.js'
 import ColorCoderPlot from './cesiumExtra/colorCoderPlot.js'
+import { buildApiUrl } from '../config'
 
 import {
     generateHull,
@@ -1551,7 +1552,7 @@ export default {
                 formData.append('description', this.bathymetryDescription || '')
 
                 try {
-                    const response = await fetch('https://localhost:8000/upload/', {
+                    const response = await fetch(buildApiUrl('/upload/'), {
                         method: 'POST',
                         body: formData,
                         headers: {
@@ -1608,7 +1609,9 @@ export default {
                 const maxLon = (rectangle.east * 180 / Math.PI)
 
                 const response = await fetch(
-                    `https://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`,
+                    buildApiUrl(
+                        `/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}`
+                    ),
                     {
                         headers: {
                             accept: 'application/json'
@@ -1656,7 +1659,7 @@ export default {
             const margin = Math.max(latSize, lonSize) * 0.2
 
             const imageryProvider = new UrlTemplateImageryProvider({
-                url: `https://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
+                url: `https://mapper.galvanicloop.com/images/${image.id}/tiles/{z}/{x}/{y}.png`,
                 rectangle: Rectangle.fromDegrees(
                     image.left - margin,
                     image.bottom - margin,
@@ -1708,7 +1711,7 @@ export default {
             try {
                 // Log the request details
                 console.log('Uploading file with credentials...')
-                const response = await fetch('https://localhost:8000/images/upload', {
+                const response = await fetch(buildApiUrl('/images/upload'), {
                     method: 'POST',
                     body: formData,
                     credentials: 'include'

@@ -36,6 +36,8 @@
 </template>
 
 <script>
+import { buildApiUrl } from '../config'
+
 export default {
     name: 'GoogleLogin',
     data () {
@@ -85,7 +87,7 @@ export default {
         async handleCredentialResponse (response) {
             try {
                 console.log('Verifying token with credentials...')
-                const verifyResult = await fetch('https://localhost:8000/auth/verify', {
+                const verifyResult = await fetch(buildApiUrl('/auth/verify'), {
                     method: 'POST',
                     credentials: 'include',
                     headers: {
@@ -129,7 +131,7 @@ export default {
 
         async checkLoginStatus () {
             try {
-                const response = await fetch('https://localhost:8000/users/me', {
+                const response = await fetch(buildApiUrl('/users/me'), {
                     credentials: 'include'
                 })
 
@@ -156,7 +158,7 @@ export default {
         async logout () {
             try {
                 // Call the logout endpoint
-                const response = await fetch('https://localhost:8000/auth/logout', {
+                const response = await fetch(buildApiUrl('/auth/logout'), {
                     method: 'POST',
                     credentials: 'include'
                 })
