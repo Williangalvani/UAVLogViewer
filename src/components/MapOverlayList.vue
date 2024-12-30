@@ -29,6 +29,12 @@
                      class="layer-item"
                      @mouseenter="highlightRectangle(image)"
                      @mouseleave="unhighlightRectangle(image)">
+                    <label class="switch">
+                        <input type="checkbox"
+                               :checked="isImageSelected(image)"
+                               @change="toggleImageOverlay(image)">
+                        <span class="slider"></span>
+                    </label>
                     <div class="layer-info" @click="toggleImageOverlay(image)">
                         <div class="layer-name">{{ image.title || 'Untitled' }}</div>
                         <div class="layer-description">
@@ -46,9 +52,12 @@
                                 @click.stop="showImageDetails(image)">
                             <i class="fas fa-info-circle"></i>
                         </button>
-                        <input type="checkbox"
-                               :checked="isImageSelected(image)"
-                               @change="toggleImageOverlay(image)">
+                        <button v-if="image.is_owner"
+                                class="action-button delete"
+                                title="Delete image"
+                                @click.stop="deleteImage(image)">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -701,6 +710,45 @@ export default {
             window.google?.accounts.id.revoke(this.currentUser?.email, () => {
                 console.log('Google consent revoked')
             })
+        },
+
+        async deleteImage (image) {
+            if (!confirm(`Are you sure you want to delete "${image.title}"?`)) {
+                return
+            }
+
+            try {
+                const response = await fetch(`https://localhost:8000/images/${image.id}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                })
+
+                if (!response.ok) {
+                    throw new Error('Failed to delete image')
+                }
+
+                // Remove from available images
+                this.availableImages = this.availableImages.filter(img => img.id !== image.id)
+
+                // Remove overlay if it was selected
+                if (this.isImageSelected(image)) {
+                    this.selectedImages.delete(image.id)
+                    if (this.imageOverlayEntities.has(image.id)) {
+                        this.viewer.scene.imageryLayers.remove(this.imageOverlayEntities.get(image.id))
+                        this.imageOverlayEntities.delete(image.id)
+                    }
+                }
+
+                // Close disambiguation if it was showing this image
+                if (this.showDisambiguation && this.clickedImages.some(img => img.id === image.id)) {
+                    this.showDisambiguation = false
+                }
+
+                console.log('Image deleted successfully')
+            } catch (error) {
+                console.error('Failed to delete image:', error)
+                alert('Failed to delete image. Please try again.')
+            }
         }
     },
     computed: {
@@ -768,7 +816,7 @@ export default {
 .layer-item {
     display: flex;
     align-items: center;
-    padding: 4px 0;
+    padding: 8px;
     cursor: pointer;
     color: #edffff;
 }
@@ -786,6 +834,8 @@ export default {
 
 .layer-info {
     flex: 1;
+    min-width: 0;
+    margin-right: 8px;
 }
 
 .layer-name {
@@ -1141,5 +1191,95 @@ export default {
 
 .google-signin-button:hover {
     background: #357ae8;
+}
+
+.overlay-actions {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.action-button {
+    background: none;
+    border: none;
+    color: #edffff;
+    padding: 4px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.action-button:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.action-button.delete {
+    color: #ff4444;
+}
+
+.action-button.delete:hover {
+    background: rgba(255, 0, 0, 0.1);
+}
+
+/* Switch styles */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+    margin: 0 8px;
+    flex-shrink: 0;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.2);
+    transition: .4s;
+    border-radius: 20px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background-color: #edffff;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #4285f4;
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.layer-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    cursor: pointer;
+    color: #edffff;
+}
+
+.layer-info {
+    flex: 1;
+    min-width: 0;
+    margin-right: 8px;
 }
 </style>
