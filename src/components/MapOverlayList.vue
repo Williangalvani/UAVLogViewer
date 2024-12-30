@@ -29,6 +29,21 @@
                      class="layer-item"
                      @mouseenter="highlightRectangle(image)"
                      @mouseleave="unhighlightRectangle(image)">
+                    <div v-if="!image.is_owner" class="vote-actions">
+                        <button class="action-button vote"
+                                :class="{ active: image.userVote === 1 }"
+                                title="Upvote"
+                                @click.stop="voteImage(image, 1)">
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                        <button class="action-button vote"
+                                :class="{ active: image.userVote === -1 }"
+                                title="Downvote"
+                                @click.stop="voteImage(image, -1)">
+                            <i class="fas fa-arrow-down"></i>
+                        </button>
+                    </div>
+                    <span v-if="!image.is_owner" class="vote-count">{{ image.vote_score || 0 }}</span>
                     <label class="switch">
                         <input type="checkbox"
                                :checked="isImageSelected(image)"
@@ -121,24 +136,6 @@
                         East: {{ selectedImage?.right.toFixed(6) }}°<br>
                         West: {{ selectedImage?.left.toFixed(6) }}°
                     </p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Login Modal -->
-        <div v-show="showLoginModal" class="login-modal">
-            <div class="login-modal-content">
-                <div id="login-section" v-show="!currentUser">
-                    <h3>Sign In</h3>
-                    <div id="g_id_signin"></div>
-                </div>
-                <div id="user-info" v-show="currentUser">
-                    <div class="user-details">
-                        <div class="user-name">{{ currentUser?.name }}</div>
-                    </div>
-                    <button class="logout-button" @click="logout">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </button>
                 </div>
             </div>
         </div>
@@ -704,14 +701,6 @@ export default {
             }
         },
 
-        async logout () {
-            this.currentUser = null
-            localStorage.removeItem('user')
-            window.google?.accounts.id.revoke(this.currentUser?.email, () => {
-                console.log('Google consent revoked')
-            })
-        },
-
         async deleteImage (image) {
             if (!confirm(`Are you sure you want to delete "${image.title}"?`)) {
                 return
@@ -748,6 +737,35 @@ export default {
             } catch (error) {
                 console.error('Failed to delete image:', error)
                 alert('Failed to delete image. Please try again.')
+            }
+        },
+
+        async voteImage (image, vote) {
+            if (!this.currentUser) {
+                // If not logged in, show login modal
+                this.showLoginModal = true
+                return
+            }
+
+            try {
+                const response = await fetch(`https://localhost:8000/images/${image.id}/vote`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ vote })
+                })
+
+                if (!response.ok) {
+                    throw new Error('Failed to vote')
+                }
+
+                // Fetch updated data from server
+                await this.fetchAvailableImages()
+            } catch (error) {
+                console.error('Failed to vote:', error)
+                alert('Failed to vote. Please try again.')
             }
         }
     },
@@ -816,7 +834,7 @@ export default {
 .layer-item {
     display: flex;
     align-items: center;
-    padding: 8px;
+    padding: 4px;
     cursor: pointer;
     color: #edffff;
 }
@@ -835,16 +853,18 @@ export default {
 .layer-info {
     flex: 1;
     min-width: 0;
-    margin-right: 8px;
+    margin-right: 4px;
 }
 
 .layer-name {
-    font-size: 0.9em;
+    font-size: 0.85em;
+    line-height: 1.2;
 }
 
 .layer-description {
-    font-size: 0.8em;
+    font-size: 0.75em;
     color: #aaa;
+    line-height: 1.2;
 }
 
 .list-header {
@@ -1134,65 +1154,6 @@ export default {
     text-overflow: ellipsis;
 }
 
-.logout-button {
-    background: none;
-    border: none;
-    color: #edffff;
-    padding: 4px 8px;
-    cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.2s;
-}
-
-.logout-button:hover {
-    opacity: 1;
-}
-
-.login-modal {
-    position: fixed;
-    top: 44px;
-    right: 5px;
-    z-index: 2000;
-    display: block;
-}
-
-.login-modal-content {
-    background: rgba(38, 38, 38, 0.95);
-    padding: 20px;
-    border-radius: 8px;
-    border: 1px solid #444;
-    min-width: 300px;
-    color: #edffff;
-    display: block;
-}
-
-.login-modal-content h3 {
-    color: #edffff;
-    margin: 0 0 16px 0;
-    text-align: center;
-}
-
-.google-signin-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    background: #4285f4;
-    color: white;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    width: 100%;
-    margin: 10px 0;
-    transition: background-color 0.2s;
-}
-
-.google-signin-button:hover {
-    background: #357ae8;
-}
-
 .overlay-actions {
     display: flex;
     gap: 4px;
@@ -1225,9 +1186,9 @@ export default {
 .switch {
     position: relative;
     display: inline-block;
-    width: 40px;
-    height: 20px;
-    margin: 0 8px;
+    width: 32px;
+    height: 16px;
+    margin: 0 6px;
     flex-shrink: 0;
 }
 
@@ -1252,8 +1213,8 @@ export default {
 .slider:before {
     position: absolute;
     content: "";
-    height: 16px;
-    width: 16px;
+    height: 12px;
+    width: 12px;
     left: 2px;
     bottom: 2px;
     background-color: #edffff;
@@ -1266,13 +1227,13 @@ input:checked + .slider {
 }
 
 input:checked + .slider:before {
-    transform: translateX(20px);
+    transform: translateX(16px);
 }
 
 .layer-item {
     display: flex;
     align-items: center;
-    padding: 8px;
+    padding: 4px;
     cursor: pointer;
     color: #edffff;
 }
@@ -1280,6 +1241,50 @@ input:checked + .slider:before {
 .layer-info {
     flex: 1;
     min-width: 0;
-    margin-right: 8px;
+    margin-right: 4px;
+}
+
+.vote-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin-right: 2px;
+    padding: 1px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.vote-count {
+    font-size: 0.75em;
+    min-width: 16px;
+    text-align: center;
+    color: #aaa;
+    margin: 0 2px;
+}
+
+.action-button.vote {
+    padding: 0;
+    opacity: 0.5;
+    height: 16px;
+    width: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7em;
+}
+
+.action-button.vote:hover {
+    opacity: 0.8;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.action-button.vote.active {
+    opacity: 1;
+    color: #4285f4;
+}
+
+.action-button.vote.active:hover {
+    background: rgba(66, 133, 244, 0.1);
 }
 </style>

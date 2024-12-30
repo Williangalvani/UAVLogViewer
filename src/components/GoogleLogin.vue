@@ -154,26 +154,48 @@ export default {
         },
 
         async logout () {
-            if (this.currentUser?.email) {
-                try {
-                    await window.google?.accounts.id.revoke(this.currentUser.email, () => {
-                        console.log('Google consent revoked')
-                    })
-                } catch (error) {
-                    console.warn('Error revoking Google consent:', error)
+            try {
+                // Call the logout endpoint
+                const response = await fetch('https://localhost:8000/auth/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                })
+
+                if (!response.ok) {
+                    throw new Error('Logout failed')
                 }
+
+                // Revoke Google consent
+                if (this.currentUser?.email) {
+                    try {
+                        await window.google?.accounts.id.revoke(this.currentUser.email, () => {
+                            console.log('Google consent revoked')
+                        })
+                    } catch (error) {
+                        console.warn('Error revoking Google consent:', error)
+                    }
+                }
+
+                // Clear local state
+                this.currentUser = null
+                localStorage.removeItem('user')
+                this.$emit('logout')
+                this.showLoginModal = false
+
+                // Reinitialize Google Sign-In
+                window.google?.accounts.id.initialize({
+                    // eslint-disable-next-line camelcase
+                    client_id: this.oauthConfig.client_id,
+                    callback: this.handleCredentialResponse
+                })
+            } catch (error) {
+                console.error('Logout error:', error)
+                // Still clear local state even if server request fails
+                this.currentUser = null
+                localStorage.removeItem('user')
+                this.$emit('logout')
+                this.showLoginModal = false
             }
-            // Clear local state regardless of revoke success
-            this.currentUser = null
-            localStorage.removeItem('user')
-            this.$emit('logout')
-            this.showLoginModal = false
-            // Reinitialize Google Sign-In
-            window.google?.accounts.id.initialize({
-                // eslint-disable-next-line camelcase
-                client_id: this.oauthConfig.client_id,
-                callback: this.handleCredentialResponse
-            })
         }
     }
 }
