@@ -155,6 +155,7 @@ import {
     ImageryLayer,
     buildModuleUrl
 } from 'cesium'
+import { buildApiUrl } from '../config'
 
 export default {
     name: 'MapOverlayList',
@@ -344,7 +345,7 @@ export default {
         async handleCredentialResponse (response) {
             try {
                 // Send the credential to backend for verification
-                const verifyResult = await fetch('https://localhost:8000/auth/verify', {
+                const verifyResult = await fetch('https://mapper.galvanicloop.com/auth/verify', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -492,7 +493,8 @@ export default {
                 const maxLon = (rectangle.east * 180 / Math.PI)
 
                 const response = await fetch(
-                    `https://localhost:8000/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}&include_partial=true`,
+                    // eslint-disable-next-line max-len
+                    buildApiUrl(`/images/bounds/?min_lat=${minLat}&min_lon=${minLon}&max_lat=${maxLat}&max_lon=${maxLon}&include_partial=true`),
                     {
                         headers: {
                             accept: 'application/json'
@@ -609,7 +611,7 @@ export default {
 
             console.log('Creating new overlay layer')
             const imageryProvider = new UrlTemplateImageryProvider({
-                url: `https://localhost:8000/images/${image.id}/tiles/{z}/{x}/{y}.png`,
+                url: buildApiUrl(`/images/${image.id}/tiles/{z}/{x}/{y}.png`),
                 rectangle: Rectangle.fromDegrees(
                     image.left - margin,
                     image.bottom - margin,
@@ -707,7 +709,7 @@ export default {
             }
 
             try {
-                const response = await fetch(`https://localhost:8000/images/${image.id}`, {
+                const response = await fetch(buildApiUrl(`/images/${image.id}`), {
                     method: 'DELETE',
                     credentials: 'include'
                 })
@@ -748,7 +750,7 @@ export default {
             }
 
             try {
-                const response = await fetch(`https://localhost:8000/images/${image.id}/vote`, {
+                const response = await fetch(buildApiUrl(`/images/${image.id}/vote`), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
