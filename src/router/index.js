@@ -3,11 +3,13 @@ import Router from 'vue-router'
 // import HelloWorld from '@/components/HelloWorld'
 import Home from '../../src/components/Home.vue'
 import PlotlyPopup from '../../src/components/PlotlyPopup.vue'
+import { PUBLIC_PATH } from '../config'
 
 Vue.use(Router)
 
 export default new Router({
     mode: 'history',
+    base: PUBLIC_PATH,
     routes: [
         {
             path: '/',
