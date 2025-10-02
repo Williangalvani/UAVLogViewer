@@ -67,8 +67,10 @@ export default {
             worker.postMessage({ action: 'trimFile', time: this.state.timeRange })
         },
         onLoadSample (file) {
+            console.log('[SideBarFileManager] onLoadSample called with:', file)
             let url
             if (file === 'sample') {
+                console.log('[SideBarFileManager] Loading sample file')
                 this.state.file = 'sample'
                 url = require('../assets/vtol.tlog').default
                 this.state.logType = 'tlog'
@@ -77,31 +79,42 @@ export default {
                 // Set the file name for display purposes
                 const urlParts = url.split('/')
                 this.state.file = urlParts[urlParts.length - 1]
+                console.log('[SideBarFileManager] File name set to:', this.state.file)
             }
             const oReq = new XMLHttpRequest()
-            console.log(`loading file from ${url}`)
+            console.log(`[SideBarFileManager] Loading file from ${url}`)
 
             // Set the log type based on file extension
             this.state.logType = url.indexOf('.tlog') > 0 ? 'tlog' : 'bin'
             if (url.indexOf('.txt') > 0) {
+                console.log('[SideBarFileManager] Detected DJI txt file')
                 this.state.logType = 'dji'
             }
+            if (url.indexOf('.mcap') > 0) {
+                console.log('[SideBarFileManager] Detected MCAP file')
+                this.state.logType = 'mcap'
+            }
 
+            console.log('[SideBarFileManager] Log type set to:', this.state.logType)
             oReq.open('GET', url, true)
             oReq.responseType = 'arraybuffer'
 
             // Use arrow function to preserve 'this' context
             oReq.onload = (oEvent) => {
                 const arrayBuffer = oReq.response
+                console.log('[SideBarFileManager] File downloaded, size:', arrayBuffer.byteLength)
 
                 this.transferMessage = 'Download Done'
                 this.sampleLoaded = true
+                console.log('[SideBarFileManager] Sending file to parser worker')
                 worker.postMessage({
                     action: 'parse',
                     file: arrayBuffer,
                     isTlog: (url.indexOf('.tlog') > 0),
-                    isDji: (url.indexOf('.txt') > 0)
+                    isDji: (url.indexOf('.txt') > 0),
+                    isMcap: (url.indexOf('.mcap') > 0)
                 })
+                console.log('[SideBarFileManager] File sent to worker')
             }
             oReq.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {
@@ -147,24 +160,38 @@ export default {
             })
         },
         process: function (file) {
+            console.log('[SideBarFileManager] process called for file:', file.name)
             this.state.file = file.name
             this.state.processStatus = 'Pre-processing...'
             this.state.processPercentage = 100
             this.file = file
             const reader = new FileReader()
             reader.onload = function (e) {
+                console.log('[SideBarFileManager] File read complete, size:', reader.result.byteLength)
                 const data = reader.result
+                console.log('[SideBarFileManager] Sending to worker:', {
+                    isTlog: file.name.endsWith('tlog'),
+                    isDji: file.name.endsWith('txt'),
+                    isMcap: file.name.endsWith('mcap')
+                })
                 worker.postMessage({
                     action: 'parse',
                     file: data,
                     isTlog: (file.name.endsWith('tlog')),
-                    isDji: (file.name.endsWith('txt'))
+                    isDji: (file.name.endsWith('txt')),
+                    isMcap: (file.name.endsWith('mcap'))
                 })
             }
             this.state.logType = file.name.endsWith('tlog') ? 'tlog' : 'bin'
             if (file.name.endsWith('.txt')) {
+                console.log('[SideBarFileManager] Setting log type to dji')
                 this.state.logType = 'dji'
             }
+            if (file.name.endsWith('.mcap')) {
+                console.log('[SideBarFileManager] Setting log type to mcap')
+                this.state.logType = 'mcap'
+            }
+            console.log('[SideBarFileManager] Log type:', this.state.logType)
             reader.readAsArrayBuffer(file)
         },
         uploadFile () {
