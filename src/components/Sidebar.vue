@@ -62,6 +62,11 @@
                           <input type="checkbox" v-model="state.showEkfHelper">
                           <a class="check-font"> EKF helper </a>
                         </label>
+                        <label>
+                          <i class="fa fa-file-alt circle"></i>
+                          <input type="checkbox" v-model="state.showLogViewer">
+                          <a class="check-font"> Log Viewer </a>
+                        </label>
                         <label v-if="state.textMessages">
                           <i class="fa fa-comment circle"></i>
                           <input type="checkbox" v-model="state.showMessages">
