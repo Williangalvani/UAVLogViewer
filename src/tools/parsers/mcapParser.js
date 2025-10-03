@@ -586,9 +586,45 @@ class McapParser {
             console.log('[MCAP Parser] Sending available message types to main thread');
             self.postMessage({ availableMessages: messageTypes });
 
-            // DON'T send first messages - they make the viewer think data is loaded
-            // Messages will be loaded on-demand via loadType() when actually needed
-            console.log('[MCAP Parser] ⚠️  NOT sending initial messages - will load on demand only');
+            // Check if this is a MAVLink MCAP file and pre-load essential messages
+            let isMavlinkMcap = false;
+            for (const [id, channel] of this.channels) {
+                if (channel.topic.startsWith('mavlink/') || channel.topic.startsWith('/mavlink/')) {
+                    isMavlinkMcap = true;
+                    break;
+                }
+            }
+
+            if (isMavlinkMcap) {
+                console.log('[MCAP Parser] 🚁 Detected MAVLink MCAP file - pre-loading essential messages for extractor');
+                const preparseList = [
+                    'SYSTEM_TIME',
+                    'GLOBAL_POSITION_INT',
+                    'GPS_RAW_INT',
+                    'HEARTBEAT',
+                    'ATTITUDE',
+                    'AHRS',
+                    'PARAM_VALUE',
+                    'STATUSTEXT',
+                    'AHRS2',
+                    'AHRS3',
+                    'NAMED_VALUE_FLOAT'
+                ];
+
+                let preloadedCount = 0;
+                for (let i = 0; i < preparseList.length; i++) {
+                    const msgType = preparseList[i];
+                    if (messageTypes[msgType]) {
+                        console.log(`[MCAP Parser] Pre-loading ${msgType}...`);
+                        this.loadType(msgType);
+                        preloadedCount++;
+                    }
+                    self.postMessage({ percentage: ((i + 1) / preparseList.length) * 100 });
+                }
+                console.log(`[MCAP Parser] ✅ Pre-loaded ${preloadedCount} essential MAVLink messages`);
+            } else {
+                console.log('[MCAP Parser] ⚠️  NOT sending initial messages - will load on demand only');
+            }
 
             console.log('[MCAP Parser] Signaling completion (messages will be loaded on demand)');
             self.postMessage({ messagesDoneLoading: true });

@@ -90,7 +90,7 @@
                             <a class="check-font download-text" v-bind:href="downloadURL"
                                v-bind:download="fileName" ref="downloadFile"> Download </a>
                         </label>
-                        <label v-if="state.logType==='tlog'" v-on:click="downloadTrimmed">
+                        <label v-if="state.logType==='tlog' || state.logType==='mcap'" v-on:click="downloadTrimmed">
                             <i
                             class="fa fa-download circle"
                             title="Download a log with starting and end time matching the current views">

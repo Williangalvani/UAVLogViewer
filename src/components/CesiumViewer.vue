@@ -1368,7 +1368,7 @@ export default {
         loadTrajectory (source) {
             this.waitForMessages([source]).then(() => {
                 let dataExtractor = null
-                if (this.state.logType === 'tlog') {
+                if (this.state.logType === 'tlog' || this.state.logType === 'mcap') {
                     dataExtractor = MavlinkDataExtractor
                 } else if (this.state.logType === 'dji') {
                     console.log('Using DJI extractor')
@@ -1383,7 +1383,7 @@ export default {
         loadAttitude (source) {
             this.waitForMessages([source]).then(() => {
                 let dataExtractor = null
-                if (this.state.logType === 'tlog') {
+                if (this.state.logType === 'tlog' || this.state.logType === 'mcap') {
                     dataExtractor = MavlinkDataExtractor
                 } else {
                     dataExtractor = DataflashDataExtractor

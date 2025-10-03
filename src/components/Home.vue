@@ -86,7 +86,7 @@ export default {
     methods: {
         extractFlightData () {
             if (this.dataExtractor === null) {
-                if (this.state.logType === 'tlog') {
+                if (this.state.logType === 'tlog' || this.state.logType === 'mcap') {
                     this.dataExtractor = MavlinkDataExtractor
                 } else if (this.state.logType === 'dji') {
                     this.dataExtractor = DjiDataExtractor

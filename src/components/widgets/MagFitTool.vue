@@ -294,7 +294,7 @@ export default {
             // sends loadType messages for all of the following tyoes:
             // this includes both dataflash and telemetry logs
             let requiredTypes = []
-            if (this.state.logType === 'tlog') {
+            if (this.state.logType === 'tlog' || this.state.logType === 'mcap') {
                 requiredTypes = ['RAW_IMU', 'SCALED_IMU2', 'SCALED_IMU3', 'ATTITUDE']
             } else {
                 requiredTypes = ['ATT', 'MAG', 'MAG2', 'MAG3']
@@ -757,7 +757,7 @@ export default {
             return 'ATTITUDE'
         },
         isTlog () {
-            return this.state.logType === 'tlog'
+            return this.state.logType === 'tlog' || this.state.logType === 'mcap'
         },
         compassMessageNames () {
             const names = []

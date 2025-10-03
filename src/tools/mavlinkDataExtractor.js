@@ -45,7 +45,12 @@ export class MavlinkDataExtractor {
         let modes = []
         if ('HEARTBEAT' in messages) {
             const msgs = messages.HEARTBEAT
-            modes = [[msgs.time_boot_ms[0], msgs.asText[0]]]
+            console.log(msgs)
+            try {
+                modes = [[msgs.time_boot_ms[0], msgs.asText[0]]]
+            } catch (e) {
+                modes = [[msgs.time_boot_ms[0], msgs.custom_mode[0]]]
+            }
             for (const i in msgs.time_boot_ms) {
                 if (validGCSs.includes(msgs.type[i])) {
                     if (msgs.asText[i] === undefined) {
@@ -280,8 +285,16 @@ export class MavlinkDataExtractor {
         const lastValue = {}
         if ('PARAM_VALUE' in messages) {
             const paramData = messages.PARAM_VALUE
+            console.log(paramData)
             for (const i in paramData.time_boot_ms) {
-                const paramName = paramData.param_id[i].replace(/[^a-z0-9A-Z_]/ig, '')
+                // if param_id is an array of numbers, convert it to chars and join them
+                let paramId = ''
+                if (Array.isArray(paramData.param_id[i])) {
+                    paramId = paramData.param_id[i].map(num => String.fromCharCode(num)).join('')
+                } else {
+                    paramId = paramData.param_id[i]
+                }
+                const paramName = paramId.replace(/[^a-z0-9A-Z_]/ig, '')
                 const paramValue = paramData.param_value[i]
                 if (lastValue.paramName && lastValue[paramName] === paramValue) {
                     continue
