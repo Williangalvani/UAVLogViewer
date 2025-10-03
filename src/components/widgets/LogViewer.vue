@@ -6,41 +6,47 @@
                 <!-- Service Selection -->
                 <div class="service-selector">
                     <label>Services:</label>
-                    <div class="service-checkboxes">
-                        <label v-for="service in availableServices" :key="service" class="service-checkbox">
-                            <input
-                                type="checkbox"
-                                :value="service"
+                    <b-dropdown
+                        :text="selectedServicesText"
+                        size="sm"
+                        variant="dark"
+                        class="filter-dropdown"
+                    >
+                        <b-dropdown-form>
+                            <b-form-checkbox
+                                v-for="option in serviceOptions"
+                                :key="option.value"
                                 v-model="selectedServices"
+                                :value="option.value"
                                 @change="onServicesChange"
-                                :checked="selectedServices.includes(service)"
                             >
-                            <span>{{ getServiceDisplayName(service) }}</span>
-                        </label>
-                    </div>
+                                {{ option.text }}
+                            </b-form-checkbox>
+                        </b-dropdown-form>
+                    </b-dropdown>
                 </div>
 
                 <!-- Log Level Filter -->
                 <div class="log-level-filter">
-                    <label for="levelFilter">Level:</label>
-                    <select id="levelFilter" v-model="selectedLevel" @change="onLevelChange">
-                        <option value="">All levels</option>
-                        <option value="DEBUG">DEBUG</option>
-                        <option value="INFO">INFO</option>
-                        <option value="WARN">WARN</option>
-                        <option value="ERROR">ERROR</option>
-                        <option value="FATAL">FATAL</option>
-                    </select>
-                </div>
-
-                <!-- Search Filter -->
-                <div class="search-filter">
-                    <input
-                        type="text"
-                        v-model="searchFilter"
-                        placeholder="Search messages..."
-                        @input="onSearchChange"
-                    />
+                    <label>Levels:</label>
+                    <b-dropdown
+                        :text="selectedLevelsText"
+                        size="sm"
+                        variant="dark"
+                        class="filter-dropdown"
+                    >
+                        <b-dropdown-form>
+                            <b-form-checkbox
+                                v-for="option in levelOptions"
+                                :key="option.value"
+                                v-model="selectedLevels"
+                                :value="option.value"
+                                @change="onLevelChange"
+                            >
+                                {{ option.text }}
+                            </b-form-checkbox>
+                        </b-dropdown-form>
+                    </b-dropdown>
                 </div>
 
                 <!-- Close button -->
@@ -101,8 +107,7 @@ export default {
             left: 50,
             top: 50,
             selectedServices: [],
-            selectedLevel: '',
-            searchFilter: '',
+            selectedLevels: [],
             cursorTime: 0
         }
     },
@@ -118,6 +123,40 @@ export default {
             }
 
             return services.sort()
+        },
+        serviceOptions () {
+            return this.availableServices.map(service => ({
+                text: this.getServiceDisplayName(service),
+                value: service
+            }))
+        },
+        levelOptions () {
+            return [
+                { text: 'TRACE', value: 'TRACE' },
+                { text: 'DEBUG', value: 'DEBUG' },
+                { text: 'INFO', value: 'INFO' },
+                { text: 'WARN', value: 'WARN' },
+                { text: 'ERROR', value: 'ERROR' },
+                { text: 'FATAL', value: 'FATAL' }
+            ]
+        },
+        selectedServicesText () {
+            if (this.selectedServices.length === 0) {
+                return 'Select Services...'
+            } else if (this.selectedServices.length === 1) {
+                return this.getServiceDisplayName(this.selectedServices[0])
+            } else {
+                return `${this.selectedServices.length} selected`
+            }
+        },
+        selectedLevelsText () {
+            if (this.selectedLevels.length === 0) {
+                return 'All Levels'
+            } else if (this.selectedLevels.length === this.levelOptions.length) {
+                return 'All Levels'
+            } else {
+                return this.selectedLevels.join(', ')
+            }
         },
         processedLogs () {
             const allLogs = []
@@ -146,7 +185,7 @@ export default {
                     allLogs.push({
                         timestamp: timestamps[i] || 0,
                         service: servicePath,
-                        level: this.getLevelName(levels[i] || 6),
+                        level: this.getLevelName(levels[i] !== undefined ? levels[i] : 2),
                         message: messages[i] || '',
                         name: names[i] || '',
                         file: files[i] || '',
@@ -165,7 +204,14 @@ export default {
             return allLogs
         },
         filteredLogs () {
-            return this.processedLogs
+            let logs = this.processedLogs
+
+            // Filter by selected levels
+            if (this.selectedLevels.length > 0) {
+                logs = logs.filter(log => this.selectedLevels.includes(log.level))
+            }
+
+            return logs
         },
         logStartTime () {
             // Get the earliest timestamp from all logs
@@ -272,9 +318,6 @@ export default {
         },
         onLevelChange () {
             // Level change is handled by computed property
-        },
-        onSearchChange () {
-            // Search change is handled by computed property
         },
         onMessagesUpdated () {
             // Force re-evaluation of computed properties when messages are updated
@@ -426,86 +469,68 @@ div#paneContent {
     color: #fff;
 }
 
-.service-selector, .log-level-filter, .search-filter {
+.service-selector, .log-level-filter {
     display: flex;
     align-items: center;
     gap: 5px;
 }
 
 .service-selector {
-    flex: 3;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    flex: 2;
 }
 
-.service-selector > label {
+.service-selector > label, .log-level-filter > label {
     font-weight: 600;
     font-size: 11px;
     white-space: nowrap;
     color: #b0b0b0;
 }
 
-.service-checkboxes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+.log-level-filter {
+    flex: 1.5;
 }
 
-.service-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 4px;
+/* Dropdown styling */
+.filter-dropdown >>> .btn {
+    font-size: 11px;
+    padding: 3px 8px;
+    background: #2a2a2f;
+    border: 1px solid #555;
+    color: #f0f0f0;
+}
+
+.filter-dropdown >>> .btn:hover,
+.filter-dropdown >>> .btn:focus {
+    background: #353540;
+    border-color: #666;
+    color: #fff;
+}
+
+.filter-dropdown >>> .dropdown-menu {
+    background: #2a2a2f;
+    border: 1px solid #555;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 11px;
+}
+
+.filter-dropdown >>> .b-dropdown-form {
+    padding: 8px;
+}
+
+.filter-dropdown >>> .custom-checkbox {
+    margin-bottom: 4px;
+}
+
+.filter-dropdown >>> .custom-control-label {
     font-size: 11px;
     color: #d0d0d0;
     cursor: pointer;
 }
 
-.service-checkbox input[type="checkbox"] {
-    cursor: pointer;
-}
-
-.service-checkbox span {
-    user-select: none;
-}
-
-.log-level-filter {
-    flex: 1;
-}
-
-.search-filter {
-    flex: 2;
-}
-
-.log-level-filter label {
+.filter-dropdown >>> .custom-control-input:checked ~ .custom-control-label {
+    color: #64b5f6;
     font-weight: 600;
-    font-size: 11px;
-    white-space: nowrap;
-    color: #b0b0b0;
-}
-
-.service-selector select, .log-level-filter select {
-    flex: 1;
-    padding: 3px 6px;
-    border: 1px solid #555;
-    border-radius: 3px;
-    font-size: 11px;
-    background: #2a2a2f;
-    color: #f0f0f0;
-}
-
-.search-filter input {
-    flex: 1;
-    padding: 3px 6px;
-    border: 1px solid #555;
-    border-radius: 3px;
-    font-size: 11px;
-    background: #2a2a2f;
-    color: #f0f0f0;
-}
-
-.search-filter input::placeholder {
-    color: #777;
 }
 
 .log-messages {
@@ -575,6 +600,11 @@ div#paneContent {
     font-size: 9px;
     text-transform: uppercase;
     flex-shrink: 0;
+}
+
+.log-level-trace {
+    background: #1a1a2e;
+    color: #9e9e9e;
 }
 
 .log-level-debug {
