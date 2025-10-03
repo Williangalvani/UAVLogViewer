@@ -1,6 +1,6 @@
 import { McapStreamReader } from "@mcap/core";
 import { decompress as decompressZstd } from "fzstd";
-
+import JSON5 from 'json5';
 // Simple CDR deserializer for common ROS 2 message types
 class CdrReader {
     constructor(buffer) {
