@@ -149,7 +149,7 @@ export class MavlinkDataExtractor {
             let startAltitude = null
             const gpsData = messages.GLOBAL_POSITION_INT
             for (const i in gpsData.time_boot_ms) {
-                if (gpsData.lat[i] !== 0) {
+                if (gpsData.lat[i]) {
                     if (startAltitude === null) {
                         startAltitude = gpsData.relative_alt[i]
                     }

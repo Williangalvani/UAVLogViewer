@@ -17,6 +17,7 @@
         <MagFitTool     @close="state.showMagfit = false" v-if="state.showMagfit"></MagFitTool>
         <EkfHelperTool  @close="state.showEkfHelper = false" v-if="state.showEkfHelper"></EkfHelperTool>
         <LogViewer      @close="state.showLogViewer = false" v-if="state.showLogViewer"></LogViewer>
+        <VideoViewer    @close="state.showVideoViewer = false" v-if="state.showVideoViewer"></VideoViewer>
         <div class="container-fluid" style="height: 100%; overflow: hidden;">
 
             <sidebar/>
@@ -62,6 +63,7 @@ import { DjiDataExtractor } from '../tools/djiDataExtractor'
 import MagFitTool from '@/components/widgets/MagFitTool.vue'
 import EkfHelperTool from '@/components/widgets/EkfHelperTool.vue'
 import LogViewer from '@/components/widgets/LogViewer.vue'
+import VideoViewer from '@/components/widgets/VideoViewer.vue'
 import Vue from 'vue'
 
 export default {
@@ -242,7 +244,8 @@ export default {
         AttitudeViewer,
         MagFitTool,
         EkfHelperTool,
-        LogViewer
+        LogViewer,
+        VideoViewer
     },
     computed: {
         mapOk () {

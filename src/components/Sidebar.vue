@@ -67,6 +67,11 @@
                           <input type="checkbox" v-model="state.showLogViewer">
                           <a class="check-font"> Log Viewer </a>
                         </label>
+                        <label>
+                          <i class="fa fa-video circle"></i>
+                          <input type="checkbox" v-model="state.showVideoViewer">
+                          <a class="check-font"> Video Viewer </a>
+                        </label>
                         <label v-if="state.textMessages">
                           <i class="fa fa-comment circle"></i>
                           <input type="checkbox" v-model="state.showMessages">

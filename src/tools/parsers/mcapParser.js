@@ -1,6 +1,110 @@
 import { McapStreamReader } from "@mcap/core";
 import { decompress as decompressZstd } from "fzstd";
 
+// Simple CDR deserializer for common ROS 2 message types
+class CdrReader {
+    constructor(buffer) {
+        this.view = new DataView(buffer.buffer || buffer);
+        this.offset = 0;
+        this.littleEndian = true;
+        
+        // Skip CDR encapsulation header (4 bytes)
+        if (this.view.byteLength >= 4) {
+            const encapsulation = this.view.getUint16(0, false);
+            this.littleEndian = (encapsulation === 0x0000 || encapsulation === 0x0001);
+            this.offset = 4;
+        }
+    }
+    
+    align(size) {
+        const remainder = this.offset % size;
+        if (remainder !== 0) {
+            this.offset += size - remainder;
+        }
+    }
+    
+    readInt32() {
+        this.align(4);
+        const value = this.view.getInt32(this.offset, this.littleEndian);
+        this.offset += 4;
+        return value;
+    }
+    
+    readUint32() {
+        this.align(4);
+        const value = this.view.getUint32(this.offset, this.littleEndian);
+        this.offset += 4;
+        return value;
+    }
+    
+    readUint64() {
+        this.align(8);
+        const low = this.view.getUint32(this.offset, this.littleEndian);
+        const high = this.view.getUint32(this.offset + 4, this.littleEndian);
+        this.offset += 8;
+        return BigInt(high) * BigInt(0x100000000) + BigInt(low);
+    }
+    
+    readString() {
+        const length = this.readUint32();
+        if (length === 0) return '';
+        // String length includes null terminator in CDR
+        const strLength = length > 0 ? length - 1 : 0;
+        const bytes = new Uint8Array(this.view.buffer, this.view.byteOffset + this.offset, strLength);
+        this.offset += length;
+        return new TextDecoder().decode(bytes);
+    }
+    
+    readByteArray() {
+        const length = this.readUint32();
+        const bytes = new Uint8Array(this.view.buffer, this.view.byteOffset + this.offset, length);
+        this.offset += length;
+        return bytes;
+    }
+}
+
+// Decode Foxglove CompressedVideo from CDR
+function decodeFoxgloveCompressedVideo(data) {
+    try {
+        const reader = new CdrReader(data);
+        
+        // Read timestamp (uint32 sec + uint32 nsec)
+        const timestamp = {
+            sec: reader.readUint32(),
+            nsec: reader.readUint32()
+        };
+        
+        // Read frame_id string
+        const frameIdLength = reader.readUint32();
+        
+        if (frameIdLength > 10000) {
+            console.error('[MCAP Parser] Invalid frame_id length:', frameIdLength);
+            return null;
+        }
+        
+        const strLength = frameIdLength > 0 ? frameIdLength - 1 : 0;
+        const frameIdBytes = new Uint8Array(reader.view.buffer, reader.view.byteOffset + reader.offset, strLength);
+        reader.offset += frameIdLength;
+        const frame_id = new TextDecoder().decode(frameIdBytes);
+        
+        // Read data byte array
+        const videoData = reader.readByteArray();
+        
+        // Read format string
+        const format = reader.readString();
+        
+        return {
+            timestamp,
+            frame_id,
+            data: videoData,
+            format
+        };
+    } catch (error) {
+        console.error('[MCAP Parser] Error decoding CompressedVideo:', error.message);
+        return null;
+    }
+}
+
 // Helper function to clean mavlink topic names
 // Converts "mavlink/1/1/ATTITUDE" -> "ATTITUDE"
 // Converts "mavlink/255/240/COMMAND_LONG" -> "COMMAND_LONG"
@@ -166,11 +270,60 @@ class McapParser {
             const timestamp = Number(msg.logTime - this.startTime) / 1000000; // Convert nanoseconds to milliseconds
             result[topicName].time_boot_ms.push(timestamp);
 
-            // Parse the data based on schema
-            if (msg.data && typeof msg.data === 'object') {
+            // Check if this is raw binary data (CDR, protobuf, etc.)
+            const isRawData = msg.data instanceof Uint8Array ||
+                              (msg.data && typeof msg.data === 'object' &&
+                               Object.keys(msg.data).length > 0 &&
+                               Object.keys(msg.data).every(k => !isNaN(k)));
+
+            if (isRawData) {
+                // Check if this is a known CDR-encoded message type
+                const schema = this.schemas.get(channel.schemaId);
+                const isFoxgloveCompressedVideo = schema?.name === 'foxglove.CompressedVideo' || 
+                                                   topicName.includes('video') ||
+                                                   topicName.includes('stream');
+                
+                if (channel.messageEncoding === 'cdr' && isFoxgloveCompressedVideo) {
+                    // Decode Foxglove CompressedVideo from CDR
+                    const decoded = decodeFoxgloveCompressedVideo(msg.data);
+                    
+                    if (decoded) {
+                        // Store decoded fields
+                        if (!result[topicName].timestamp) result[topicName].timestamp = [];
+                        if (!result[topicName].frame_id) result[topicName].frame_id = [];
+                        if (!result[topicName].data) result[topicName].data = [];
+                        if (!result[topicName].format) result[topicName].format = [];
+                        
+                        result[topicName].timestamp.push(decoded.timestamp);
+                        result[topicName].frame_id.push(decoded.frame_id);
+                        result[topicName].data.push(decoded.data);
+                        result[topicName].format.push(decoded.format);
+                        
+                        if (index === 0) {
+                            console.log(`[MCAP Parser] ✅ Decoding ${messages.length} CompressedVideo frames (${decoded.format}) for ${topicName}`);
+                        }
+                    } else if (index === 0) {
+                        console.warn(`[MCAP Parser] Failed to decode CompressedVideo`);
+                    }
+                } else {
+                    // For other raw binary data, store the entire data blob
+                    if (!result[topicName].data) {
+                        result[topicName].data = [];
+                    }
+                    result[topicName].data.push(msg.data);
+
+                    // Log once for the first message
+                    if (index === 0) {
+                        console.log(`[MCAP Parser] Detected raw binary data for ${topicName} (${channel.messageEncoding} encoding)`);
+                        console.log(`[MCAP Parser] Storing ${messages.length} binary payloads in 'data' field`);
+                    }
+                }
+            } else if (msg.data && typeof msg.data === 'object') {
                 if (isMavlinkJson && msg.data.message && typeof msg.data.message === 'object') {
                     // For mavlink JSON messages, extract fields from the nested 'message' object
-                    console.log(`[MCAP Parser] Extracting mavlink message fields for ${topicName}`);
+                    if (index === 0) {
+                        console.log(`[MCAP Parser] Extracting mavlink message fields for ${topicName}`);
+                    }
 
                     // Add header timestamp if available
                     if (msg.data.header && msg.data.header.stamp) {
@@ -190,7 +343,7 @@ class McapParser {
                         result[topicName][key].push(msg.data.message[key]);
                     });
                 } else {
-                    // Default behavior for non-mavlink messages
+                    // Default behavior for non-mavlink JSON messages
                     Object.keys(msg.data).forEach(key => {
                         if (!result[topicName][key]) {
                             result[topicName][key] = [];
@@ -249,16 +402,32 @@ class McapParser {
                                    Object.keys(firstMsg.data).every(k => !isNaN(k)));
 
                 if (isRawData) {
-                    console.warn(`[MCAP Parser] Channel ${topicName} contains raw binary data that needs decoding`);
-                    console.log(`[MCAP Parser] Message encoding: ${channel.messageEncoding}, Schema encoding: ${schema?.encoding}`);
+                    console.log(`[MCAP Parser] Channel ${topicName} contains raw binary data (${channel.messageEncoding} encoding)`);
+                    console.log(`[MCAP Parser] Schema: ${schema?.name || 'unknown'}`);
 
-                    // For now, just indicate that the data exists but needs decoding
-                    expressions.push('_raw_data');
-                    complexFields.push({
-                        name: '_raw_data',
-                        units: 'bytes',
-                        multiplier: 1
-                    });
+                    // Check if this is CompressedVideo
+                    const isFoxgloveCompressedVideo = schema?.name === 'foxglove.CompressedVideo' || 
+                                                       topicName.includes('video') ||
+                                                       topicName.includes('stream');
+                    
+                    if (channel.messageEncoding === 'cdr' && isFoxgloveCompressedVideo) {
+                        // CompressedVideo fields
+                        expressions.push('timestamp', 'frame_id', 'data', 'format');
+                        complexFields.push(
+                            { name: 'timestamp', units: 's', multiplier: 1 },
+                            { name: 'frame_id', units: '', multiplier: 1 },
+                            { name: 'data', units: 'bytes', multiplier: 1 },
+                            { name: 'format', units: '', multiplier: 1 }
+                        );
+                    } else {
+                        // Generic raw binary data
+                        expressions.push('data');
+                        complexFields.push({
+                            name: 'data',
+                            units: 'bytes',
+                            multiplier: 1
+                        });
+                    }
                 } else if (isMavlinkJson && firstMsg.data?.message && typeof firstMsg.data.message === 'object') {
                     // For mavlink JSON messages, extract fields from the nested 'message' object
                     console.log(`[MCAP Parser] Extracting mavlink message fields from: ${topicName}`);
