@@ -8,13 +8,19 @@ const McapParser = require('./mcapParser').default
 console.log('[Parser Worker] Worker initialized and ready')
 
 let parser
+let messageCounter = 0
+
 self.addEventListener('message', async function (event) {
-    console.log('[Parser Worker] Received message:', {
+    messageCounter++
+    console.log(`[Parser Worker] <<<< Message #${messageCounter} received >>>>`)
+    console.log('[Parser Worker] Message details:', {
         action: event.data?.action,
         hasFile: !!event.data?.file,
         isTlog: event.data?.isTlog,
         isDji: event.data?.isDji,
-        isMcap: event.data?.isMcap
+        isMcap: event.data?.isMcap,
+        type: event.data?.type,
+        timestamp: new Date().toISOString()
     })
     
     if (event.data === null) {
@@ -40,7 +46,13 @@ self.addEventListener('message', async function (event) {
         } else if (event.data.isMcap) {
             console.log('[Parser Worker] Creating McapParser for MCAP file')
             parser = new McapParser()
+            console.log('[Parser Worker] McapParser created:', {
+                hasLoadType: typeof parser.loadType === 'function',
+                hasProcessData: typeof parser.processData === 'function',
+                parserType: parser.constructor.name
+            })
             await parser.processData(data)
+            console.log('[Parser Worker] ✅ MCAP file processing complete, parser ready for loadType requests')
         } else {
             console.log('[Parser Worker] Creating DataflashParser for dataflash file')
             parser = new DataflashParser(true)
@@ -49,16 +61,31 @@ self.addEventListener('message', async function (event) {
         }
 
     } else if (event.data.action === 'loadType') {
-        console.log('[Parser Worker] Loading message type:', event.data.type)
+        console.log('[Parser Worker] ========================================')
+        console.log('[Parser Worker] 📨 RECEIVED loadType request')
+        console.log('[Parser Worker]    Raw type string:', event.data.type)
+        console.log('[Parser Worker]    Parser exists:', !!parser)
+        console.log('[Parser Worker]    Parser type:', parser?.constructor?.name)
+        
         if (!parser) {
-            console.error('[Parser Worker] Parser not ready when trying to load type!')
+            console.error('[Parser Worker] ❌ ERROR: Parser not ready when trying to load type!')
+            console.error('[Parser Worker]    This usually means the file hasn\'t been parsed yet')
             console.log('parser not ready')
         } else {
-            parser.loadType(event.data.type.split('[')[0])
+            const cleanType = event.data.type.split('[')[0]
+            console.log('[Parser Worker]    Cleaned type:', cleanType)
+            console.log('[Parser Worker] 🔄 Forwarding to parser.loadType()...')
+            parser.loadType(cleanType)
+            console.log('[Parser Worker] ✅ loadType() call completed')
         }
+        console.log('[Parser Worker] ========================================')
     } else if (event.data.action === 'trimFile') {
         console.log('[Parser Worker] Trimming file to time:', event.data.time)
-        parser.trimFile(event.data.time)
+        if (!parser || !parser.trimFile) {
+            console.warn('[Parser Worker] Parser does not support trimFile')
+        } else {
+            parser.trimFile(event.data.time)
+        }
     } else {
         console.warn('[Parser Worker] Unknown action:', event.data.action)
     }

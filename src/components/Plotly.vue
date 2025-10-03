@@ -675,7 +675,9 @@ export default {
             if (messages.length > 0) {
                 if (this.state.messages[messages[0]] === undefined) {
                     console.log('ERROR: message ' + messages[0] + ' not found')
-                    return { error: 'message ' + messages[0] + ' not found' }
+                    console.log('[Plotly] 🔔 Emitting loadType event for:', messages[0])
+                    this.$eventHub.$emit('loadType', messages[0])
+                    return { error: 'message ' + messages[0] + ' not found - loading...' }
                 }
                 x = this.state.messages[messages[0]].time_boot_ms
             } else {
