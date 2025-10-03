@@ -648,11 +648,7 @@ class McapParser {
                         try {
                             let jsonString = new TextDecoder().decode(record.data);
 
-                            // Replace NaN values in JSON string before parsing
-                            // This handles cases where NaN appears as literal values in the JSON
-                            jsonString = jsonString.replace(/:\s*NaN\s*([,}])/g, ': 0$1');
-
-                            record.data = JSON.parse(jsonString);
+                            record.data = JSON5.parse(jsonString);
                             if (startTime === record.logTime) {
                                 console.log('[MCAP Parser] Successfully decoded JSON message:', {
                                     channelId: record.channelId,
