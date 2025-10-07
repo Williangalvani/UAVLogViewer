@@ -15,7 +15,7 @@ class CdrReader {
             this.offset = 4;
         }
     }
-    
+
     align(size) {
         const remainder = this.offset % size;
         if (remainder !== 0) {
@@ -128,7 +128,7 @@ function cleanTopicName(topicName) {
 class McapParser {
     constructor() {
         console.log('[MCAP Parser] Initializing MCAP parser');
-        this.allMessages = [];
+        // Removed this.allMessages to save memory - it was unused
         this.channels = new Map();
         this.schemas = new Map();
         
@@ -580,7 +580,7 @@ class McapParser {
             reader.append(uint8Data);
 
             let startTime = null;
-            const messages = [];
+            let messageCount = 0; // Track count instead of storing all messages
 
             console.log('[MCAP Parser] Reading records from MCAP file...');
             let record;
@@ -669,10 +669,10 @@ class McapParser {
                         this.messagesByChannel.set(record.channelId, []);
                     }
                     this.messagesByChannel.get(record.channelId).push(record);
-                    messages.push(record);
+                    messageCount++; // Just count, don't store duplicate
 
-                    if (messages.length % 5000 === 0) {
-                        console.log(`[MCAP Parser] Loaded ${messages.length} messages...`);
+                    if (messageCount % 5000 === 0) {
+                        console.log(`[MCAP Parser] Loaded ${messageCount} messages...`);
                     }
                 }
 
@@ -685,7 +685,7 @@ class McapParser {
             }
 
             console.log('[MCAP Parser] File parsing complete', {
-                totalMessages: messages.length,
+                totalMessages: messageCount,
                 totalChannels: this.channels.size,
                 totalSchemas: this.schemas.size,
                 metadataRecords: Object.keys(this.metadata).length
@@ -739,7 +739,7 @@ class McapParser {
             // Send metadata
             const metadata = {
                 startTime: startTime ? Number(startTime) / 1000000 : Date.now(),
-                messageCount: messages.length,
+                messageCount: messageCount,
                 channels: this.channels.size,
                 schemas: this.schemas.size
             };

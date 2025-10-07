@@ -670,6 +670,18 @@ export default {
                 this.loading = false
             }
         },
+        findNalUnitEnd (data, startPos) {
+            // Find the end of a NAL unit by looking for the next start code
+            for (let k = startPos; k < data.length - 3; k++) {
+                if ((data[k] === 0x00 && data[k + 1] === 0x00 &&
+                     data[k + 2] === 0x00 && data[k + 3] === 0x01) ||
+                    (data[k] === 0x00 && data[k + 1] === 0x00 &&
+                     data[k + 2] === 0x01)) {
+                    return k
+                }
+            }
+            return data.length
+        },
         async findKeyFrames () {
             console.log('[VideoViewer] Analyzing video structure to find keyframes...')
 
@@ -754,22 +766,15 @@ export default {
                     }
                 }
 
-                // Log all NAL units found in this frame for debugging
-                if (i < 5) { // Only log first 5 frames to avoid spam
-                    console.log(`[VideoViewer] Frame ${i} NAL units:`, nalUnitsFound.map(type => {
-                        const names = { 1: 'P-slice', 2: 'P-slice', 5: 'IDR', 6: 'SEI', 7: 'SPS', 8: 'PPS', 9: 'AUD' }
-                        return `${type}(${names[type] || 'unknown'})`
-                    }).join(', '))
-                }
-
-                // Force log for debugging - show what we actually found (only first 5 frames)
-                if (i < 5) {
-                    console.log(`[VideoViewer] Frame ${i} detailed analysis:`, {
-                        nalUnitsFound: nalUnitsFound,
+                // Log NAL units for first few frames only (reduced string operations)
+                if (i < 3) { // Reduced from 5 to 3 frames for less verbosity
+                    const nalNames = { 1: 'P-slice', 2: 'P-slice', 5: 'IDR', 6: 'SEI', 7: 'SPS', 8: 'PPS', 9: 'AUD' }
+                    const nalTypes = nalUnitsFound.map(type => `${type}(${nalNames[type] || 'unknown'})`).join(', ')
+                    console.log(`[VideoViewer] Frame ${i} NAL units: ${nalTypes}`)
+                    console.log(`[VideoViewer] Frame ${i} analysis:`, {
+                        nalCount: nalUnitsFound.length,
                         isKeyFrame: isKeyFrame,
-                        frameSize: frame.data.length,
-                        firstBytes: Array.from(frame.data.slice(0, 12))
-                            .map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')
+                        frameSize: frame.data.length
                     })
                 }
 
@@ -1008,27 +1013,29 @@ export default {
 
             console.log(`[VideoViewer] Decoding from index ${startIndex} to ${targetIndex}`)
 
-            // Decode frames from keyframe to target
+            // Decode frames from keyframe to target - optimized to avoid redundant work
             for (let i = startIndex; i <= targetIndex; i++) {
                 if (this.decodedFrames.has(i)) continue // Skip already decoded frames
 
                 const frame = this.videoFrames[i]
-                const isKeyFrame = (i === startIndex) || (i === 0)
+                const isKeyFrame = this.keyFrameIndices.includes(i)
 
                 try {
-                    // Analyze frame data before decoding
-                    console.log(`[VideoViewer] Analyzing frame ${i} before decoding:`, {
-                        frameSize: frame.data.length,
-                        isKeyFrame: isKeyFrame,
-                        firstBytes: Array
-                            .from(frame.data.slice(0, 8)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ')
-                    })
+                    // Only log for keyframes or first few frames to reduce verbosity
+                    if (isKeyFrame || i < 3) {
+                        console.log(`[VideoViewer] Decoding frame ${i}:`, {
+                            frameSize: frame.data.length,
+                            isKeyFrame: isKeyFrame
+                        })
+                    }
 
                     // For Annex B format, process frame data (keep SPS/PPS in-band, skip only AUDs)
                     let frameData = frame.data
                     if (isKeyFrame) { // Process keyframes for Annex B format
                         frameData = this.extractAnnexBFrameData(frame.data)
-                        console.log(`[VideoViewer] 🔧 Annex B data: ${frameData.length} bytes (was ${frame.data.length})`)
+                        if (i < 3) { // Only log for first few keyframes
+                            console.log(`[VideoViewer] 🔧 Annex B data: ${frameData.length} bytes (was ${frame.data.length})`)
+                        }
                     }
 
                     // eslint-disable-next-line no-undef
@@ -1055,10 +1062,14 @@ export default {
                         }, 5000) // 5 second timeout
                     })
 
-                    console.log(`[VideoViewer] Submitting frame ${i} to decoder`)
+                    if (isKeyFrame || i < 3) {
+                        console.log(`[VideoViewer] Submitting frame ${i} to decoder`)
+                    }
                     this.videoDecoder.decode(chunk)
                     await decodePromise // Wait for this frame to be decoded
-                    console.log(`[VideoViewer] Frame ${i} decoded successfully`)
+                    if (isKeyFrame || i < 3) {
+                        console.log(`[VideoViewer] Frame ${i} decoded successfully`)
+                    }
                 } catch (error) {
                     console.error(`[VideoViewer] Error decoding frame ${i}:`, error)
                     console.error(`[VideoViewer] Frame ${i} details:`, {
@@ -1081,26 +1092,33 @@ export default {
             this.displayFrameAtIndex(targetIndex)
         },
         cleanupOldFrames (currentIndex) {
-            // Keep only frames within a window around current index
-            const keepRange = Math.floor(this.maxDecodedFrames / 2)
-            const minKeep = Math.max(0, currentIndex - keepRange)
-            const maxKeep = currentIndex + keepRange
-
-            const framesToDelete = []
-            for (const [index, frame] of this.decodedFrames.entries()) {
-                if (index < minKeep || index > maxKeep) {
-                    framesToDelete.push(index)
-                    frame.close() // Free video frame memory
+            // During playback, keep frames from the nearest keyframe forward to maintain decoder state
+            // Find the nearest keyframe at or before current index
+            let nearestKeyFrame = 0
+            for (const keyFrameIndex of this.keyFrameIndices) {
+                if (keyFrameIndex <= currentIndex) {
+                    nearestKeyFrame = keyFrameIndex
+                } else {
+                    break
                 }
             }
 
-            framesToDelete.forEach(index => {
-                this.decodedFrames.delete(index)
-            })
+            // Keep frames from nearest keyframe to current + some lookahead
+            const lookahead = 10
+            const minKeep = nearestKeyFrame
+            const maxKeep = currentIndex + lookahead
 
-            if (framesToDelete.length > 0) {
-                console.log(`[VideoViewer] Cleaned up ${framesToDelete.length} old frames`)
-                console.log(`keeping ${this.decodedFrames.size} frames in buffer`)
+            let deletedCount = 0
+            for (const [index, frame] of this.decodedFrames.entries()) {
+                if (index < minKeep || index > maxKeep) {
+                    frame.close() // Free video frame memory
+                    this.decodedFrames.delete(index)
+                    deletedCount++
+                }
+            }
+
+            if (deletedCount > 0) {
+                console.log(`[VideoViewer] Cleaned up ${deletedCount} old frames, keeping ${this.decodedFrames.size} in buffer (from keyframe ${nearestKeyFrame} to ${maxKeep})`)
             }
         },
         onFrameDecoded (videoFrame) {
@@ -1108,14 +1126,15 @@ export default {
             const index = this.pendingDecodeIndex || this.decodedFrames.size
             this.decodedFrames.set(index, videoFrame)
 
-            console.log(`[VideoViewer] Frame decoded and stored at index ${index}:`, {
-                displayWidth: videoFrame.displayWidth,
-                displayHeight: videoFrame.displayHeight,
-                format: videoFrame.format,
-                timestamp: videoFrame.timestamp,
-                duration: videoFrame.duration,
-                totalDecodedFrames: this.decodedFrames.size
-            })
+            // Only log for first few frames or keyframes to reduce verbosity
+            if (index < 3 || this.keyFrameIndices.includes(index)) {
+                console.log(`[VideoViewer] Frame decoded and stored at index ${index}:`, {
+                    displayWidth: videoFrame.displayWidth,
+                    displayHeight: videoFrame.displayHeight,
+                    format: videoFrame.format,
+                    totalDecodedFrames: this.decodedFrames.size
+                })
+            }
 
             // Set canvas size to match video on first frame
             if (this.decodedFrames.size === 1) {
@@ -1145,7 +1164,10 @@ export default {
                 return
             }
 
-            console.log(`[VideoViewer] Displaying frame at index ${index}`)
+            // Only log for first few frames to reduce verbosity
+            if (index < 3) {
+                console.log(`[VideoViewer] Displaying frame at index ${index}`)
+            }
             const canvas = this.$refs.videoCanvas
             this.canvasContext.drawImage(videoFrame, 0, 0, canvas.width, canvas.height)
             this.currentFrameIndex = index
